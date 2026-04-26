@@ -13,7 +13,7 @@ use codex_core_plugins::marketplace_remove::remove_marketplace;
 use codex_utils_cli::CliConfigOverrides;
 
 #[derive(Debug, Parser)]
-#[command(bin_name = "codex plugin marketplace")]
+#[command(bin_name = "spcode plugin marketplace")]
 pub struct MarketplaceCli {
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
@@ -48,7 +48,7 @@ struct AddMarketplaceArgs {
 }
 
 #[derive(Debug, Parser)]
-#[command(bin_name = "codex plugin marketplace upgrade")]
+#[command(bin_name = "spcode plugin marketplace upgrade")]
 struct UpgradeMarketplaceArgs {
     marketplace_name: Option<String>,
 }

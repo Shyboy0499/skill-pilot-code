@@ -78,7 +78,20 @@ export class CodexExec {
       }
     }
 
-    if (args.baseUrl) {
+    if (process.env.SKILL_PILOT_BASE_URL) {
+      commandArgs.push(
+        "--config",
+        `model_provider="skill_pilot"`,
+        "--config",
+        `model_providers.skill_pilot.name="skill_pilot"`,
+        "--config",
+        `model_providers.skill_pilot.base_url=${toTomlValue(process.env.SKILL_PILOT_BASE_URL, "base_url")}`,
+        "--config",
+        `model_providers.skill_pilot.requires_openai_auth=false`,
+        "--config",
+        `model_providers.skill_pilot.wire_api="responses"`
+      );
+    } else if (args.baseUrl) {
       commandArgs.push(
         "--config",
         `openai_base_url=${toTomlValue(args.baseUrl, "openai_base_url")}`,

@@ -1,9 +1,9 @@
 {
-  "name": "codex-devcontainer-install",
+  "name": "spcode-devcontainer-install",
   "private": true,
-  "description": "Locked Codex CLI install boundary for the secure devcontainer.",
+  "description": "Locked Spcode CLI install boundary for the secure devcontainer.",
   "dependencies": {
-    "@openai/codex": "0.121.0"
+    "@openai/spcode": "0.121.0"
   },
   "engines": {
     "node": ">=22",

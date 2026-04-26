@@ -61,13 +61,51 @@ impl<T: HttpTransport> ModelsClient<T> {
             .and_then(|value| value.to_str().ok())
             .map(ToString::to_string);
 
-        let ModelsResponse { models } = serde_json::from_slice::<ModelsResponse>(&resp.body)
-            .map_err(|e| {
-                ApiError::Stream(format!(
-                    "failed to decode models response: {e}; body: {}",
-                    String::from_utf8_lossy(&resp.body)
-                ))
+        let models = if self.session.provider.name == "skill_pilot" || self.session.provider.name == "openai" {
+            let ModelsResponse { models } = serde_json::from_slice::<ModelsResponse>(&resp.body)
+                .map_err(|e| {
+                    ApiError::Stream(format!(
+                        "failed to decode models response: {e}; body: {}",
+                        String::from_utf8_lossy(&resp.body)
+                    ))
+                })?;
+            models
+        } else {
+            let json: serde_json::Value = serde_json::from_slice(&resp.body).map_err(|e| {
+                ApiError::Stream(format!("failed to parse standard openai list json: {e}"))
             })?;
+            
+            let data_array = json.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
+                ApiError::Stream("expected 'data' array in standard openai models response".to_string())
+            })?;
+
+            data_array
+                .iter()
+                .filter_map(|model| {
+                    let id = model.get("id").and_then(|v| v.as_str())?;
+                    Some(ModelInfo {
+                        slug: id.to_string(),
+                        display_name: id.to_string(),
+                        description: Some(id.to_string()),
+                        default_reasoning_level: None,
+                        supported_reasoning_levels: Vec::new(),
+                        shell_type: codex_protocol::openai_models::ConfigShellToolType::Bash,
+                        visibility: codex_protocol::openai_models::ModelVisibility::Public,
+                        supported_in_api: true,
+                        priority: 0,
+                        additional_speed_tiers: Vec::new(),
+                        availability_nux: None,
+                        upgrade: None,
+                        base_instructions: String::new(),
+                        supports_reasoning_summaries: false,
+                        personality_default: None,
+                        personality_friendly: None,
+                        personality_pragmatic: None,
+                        minimal_client_version: None,
+                    })
+                })
+                .collect()
+        };
 
         Ok((models, header_etag))
     }
