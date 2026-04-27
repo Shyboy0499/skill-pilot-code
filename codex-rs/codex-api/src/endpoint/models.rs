@@ -61,7 +61,7 @@ impl<T: HttpTransport> ModelsClient<T> {
             .and_then(|value| value.to_str().ok())
             .map(ToString::to_string);
 
-        let models = if self.session.provider.name == "skill_pilot" || self.session.provider.name == "openai" {
+        let models = if self.session.provider().name == "skill_pilot" || self.session.provider().name == "openai" {
             let ModelsResponse { models } = serde_json::from_slice::<ModelsResponse>(&resp.body)
                 .map_err(|e| {
                     ApiError::Stream(format!(
@@ -89,19 +89,32 @@ impl<T: HttpTransport> ModelsClient<T> {
                         description: Some(id.to_string()),
                         default_reasoning_level: None,
                         supported_reasoning_levels: Vec::new(),
-                        shell_type: codex_protocol::openai_models::ConfigShellToolType::Bash,
-                        visibility: codex_protocol::openai_models::ModelVisibility::Public,
+                        shell_type: codex_protocol::openai_models::ConfigShellToolType::ShellCommand,
+                        visibility: codex_protocol::openai_models::ModelVisibility::List,
                         supported_in_api: true,
                         priority: 0,
                         additional_speed_tiers: Vec::new(),
                         availability_nux: None,
                         upgrade: None,
                         base_instructions: String::new(),
+                        model_messages: None,
                         supports_reasoning_summaries: false,
-                        personality_default: None,
-                        personality_friendly: None,
-                        personality_pragmatic: None,
-                        minimal_client_version: None,
+                        default_reasoning_summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                        support_verbosity: false,
+                        default_verbosity: None,
+                        apply_patch_tool_type: None,
+                        web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
+                        truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(10_000),
+                        supports_parallel_tool_calls: false,
+                        supports_image_detail_original: false,
+                        context_window: None,
+                        max_context_window: None,
+                        auto_compact_token_limit: None,
+                        effective_context_window_percent: 95,
+                        experimental_supported_tools: Vec::new(),
+                        input_modalities: vec![codex_protocol::openai_models::InputModality::Text],
+                        used_fallback_model_metadata: false,
+                        supports_search_tool: false,
                     })
                 })
                 .collect()
@@ -240,7 +253,6 @@ mod tests {
                     "supported_reasoning_levels": [{"effort": "low", "description": "low"}, {"effort": "medium", "description": "medium"}, {"effort": "high", "description": "high"}],
                     "shell_type": "shell_command",
                     "visibility": "list",
-                    "minimal_client_version": [0, 99, 0],
                     "supported_in_api": true,
                     "priority": 1,
                     "upgrade": null,
@@ -249,11 +261,18 @@ mod tests {
                     "support_verbosity": false,
                     "default_verbosity": null,
                     "apply_patch_tool_type": null,
-                    "truncation_policy": {"mode": "bytes", "limit": 10_000},
+                    "web_search_tool_type": "text",
+                    "truncation_policy": {"mode": "bytes", "limit": 10000},
                     "supports_parallel_tool_calls": false,
                     "supports_image_detail_original": false,
-                    "context_window": 272_000,
+                    "context_window": 272000,
+                    "max_context_window": null,
+                    "auto_compact_token_limit": null,
+                    "effective_context_window_percent": 95,
                     "experimental_supported_tools": [],
+                    "input_modalities": ["text"],
+                    "used_fallback_model_metadata": false,
+                    "supports_search_tool": false,
                 }))
                 .unwrap(),
             ],

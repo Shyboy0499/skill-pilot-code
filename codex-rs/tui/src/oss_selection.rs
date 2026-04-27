@@ -4,8 +4,10 @@ use std::sync::LazyLock;
 use crate::legacy_core::config::set_default_oss_provider;
 use codex_model_provider_info::DEFAULT_LMSTUDIO_PORT;
 use codex_model_provider_info::DEFAULT_OLLAMA_PORT;
+use codex_model_provider_info::DEFAULT_SKILL_PILOT_PORT;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -74,6 +76,12 @@ static OSS_SELECT_OPTIONS: LazyLock<Vec<SelectOption>> = LazyLock::new(|| {
             key: KeyCode::Char('o'),
             provider_id: OLLAMA_OSS_PROVIDER_ID,
         },
+        SelectOption {
+            label: Line::from(vec!["S".underlined(), "kill Pilot".into()]),
+            description: "Local Skill Pilot server (default port 8080)",
+            key: KeyCode::Char('s'),
+            provider_id: SKILL_PILOT_OSS_PROVIDER_ID,
+        },
     ]
 });
 
@@ -92,7 +100,7 @@ pub struct OssSelectionWidget<'a> {
 }
 
 impl OssSelectionWidget<'_> {
-    fn new(lmstudio_status: ProviderStatus, ollama_status: ProviderStatus) -> io::Result<Self> {
+    fn new(lmstudio_status: ProviderStatus, ollama_status: ProviderStatus, skill_pilot_status: ProviderStatus) -> io::Result<Self> {
         let providers = vec![
             ProviderOption {
                 name: "LM Studio".to_string(),
@@ -105,6 +113,10 @@ impl OssSelectionWidget<'_> {
             ProviderOption {
                 name: "Ollama (Chat)".to_string(),
                 status: ollama_status,
+            },
+            ProviderOption {
+                name: "Skill Pilot".to_string(),
+                status: skill_pilot_status,
             },
         ];
 
@@ -291,23 +303,28 @@ pub async fn select_oss_provider(codex_home: &std::path::Path) -> io::Result<Str
     // Check provider statuses first
     let lmstudio_status = check_lmstudio_status().await;
     let ollama_status = check_ollama_status().await;
+    let skill_pilot_status = check_skill_pilot_status().await;
 
     // Autoselect if only one is running
-    match (&lmstudio_status, &ollama_status) {
-        (ProviderStatus::Running, ProviderStatus::NotRunning) => {
+    match (&lmstudio_status, &ollama_status, &skill_pilot_status) {
+        (ProviderStatus::Running, ProviderStatus::NotRunning, ProviderStatus::NotRunning) => {
             let provider = LMSTUDIO_OSS_PROVIDER_ID.to_string();
             return Ok(provider);
         }
-        (ProviderStatus::NotRunning, ProviderStatus::Running) => {
+        (ProviderStatus::NotRunning, ProviderStatus::Running, ProviderStatus::NotRunning) => {
             let provider = OLLAMA_OSS_PROVIDER_ID.to_string();
             return Ok(provider);
         }
+        (ProviderStatus::NotRunning, ProviderStatus::NotRunning, ProviderStatus::Running) => {
+            let provider = SKILL_PILOT_OSS_PROVIDER_ID.to_string();
+            return Ok(provider);
+        }
         _ => {
-            // Both running or both not running - show UI
+            // Multiple running or all not running - show UI
         }
     }
 
-    let mut widget = OssSelectionWidget::new(lmstudio_status, ollama_status)?;
+    let mut widget = OssSelectionWidget::new(lmstudio_status, ollama_status, skill_pilot_status)?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -352,6 +369,14 @@ async fn check_lmstudio_status() -> ProviderStatus {
 
 async fn check_ollama_status() -> ProviderStatus {
     match check_port_status(DEFAULT_OLLAMA_PORT).await {
+        Ok(true) => ProviderStatus::Running,
+        Ok(false) => ProviderStatus::NotRunning,
+        Err(_) => ProviderStatus::Unknown,
+    }
+}
+
+async fn check_skill_pilot_status() -> ProviderStatus {
+    match check_port_status(DEFAULT_SKILL_PILOT_PORT).await {
         Ok(true) => ProviderStatus::Running,
         Ok(false) => ProviderStatus::NotRunning,
         Err(_) => ProviderStatus::Unknown,

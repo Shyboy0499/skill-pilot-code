@@ -410,4 +410,3 @@ mod tests {
         assert_eq!(safe_format_key(key), "***");
     }
 }
-}

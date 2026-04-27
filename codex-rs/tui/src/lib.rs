@@ -796,9 +796,19 @@ pub async fn run_main(
         chatgpt_base_url,
     );
 
-    let model_provider_override = if cli.oss {
+    let skill_pilot_env_url = std::env::var("SKILL_PILOT_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+
+    let (is_oss, provider_from_env) = if skill_pilot_env_url.is_some() {
+        (true, Some(codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID.to_string()))
+    } else {
+        (cli.oss, cli.oss_provider.clone())
+    };
+
+    let model_provider_override = if is_oss {
         let resolved = resolve_oss_provider(
-            cli.oss_provider.as_deref(),
+            provider_from_env.as_deref(),
             &config_toml,
             cli.config_profile.clone(),
         );
@@ -819,10 +829,10 @@ pub async fn run_main(
         None
     };
 
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
+    // When using `--oss` or skill pilot env var, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = &cli.model {
         Some(model.clone())
-    } else if cli.oss {
+    } else if is_oss {
         // Use the provider from model_provider_override
         model_provider_override
             .as_ref()
@@ -848,7 +858,7 @@ pub async fn run_main(
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
-        show_raw_agent_reasoning: cli.oss.then_some(true),
+        show_raw_agent_reasoning: is_oss.then_some(true),
         additional_writable_roots: additional_dirs,
         ..Default::default()
     };
@@ -942,7 +952,7 @@ pub async fn run_main(
     let feedback_layer = feedback.logger_layer();
     let feedback_metadata_layer = feedback.metadata_layer();
 
-    if cli.oss && model_provider_override.is_some() {
+    if is_oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
         // Let's handle None case gracefully though just in case
         let provider_id = match model_provider_override.as_ref() {

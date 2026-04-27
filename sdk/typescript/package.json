@@ -1,5 +1,5 @@
 {
-  "name": "@openai/spcode-sdk",
+  "name": "@skill-pilot/spcode-sdk",
   "version": "0.0.0-dev",
   "description": "TypeScript SDK for Spcode APIs.",
   "repository": {

@@ -935,4 +935,3 @@ fn format_mcp_status(config: &McpServerConfig) -> String {
         "disabled".to_string()
     }
 }
-}

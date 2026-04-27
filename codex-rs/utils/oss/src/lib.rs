@@ -3,12 +3,14 @@
 use codex_core::config::Config;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID;
 
 /// Returns the default model for a given OSS provider.
 pub fn get_default_model_for_oss_provider(provider_id: &str) -> Option<&'static str> {
     match provider_id {
         LMSTUDIO_OSS_PROVIDER_ID => Some(codex_lmstudio::DEFAULT_OSS_MODEL),
         OLLAMA_OSS_PROVIDER_ID => Some(codex_ollama::DEFAULT_OSS_MODEL),
+        SKILL_PILOT_OSS_PROVIDER_ID => Some("skill-pilot-model"),
         _ => None,
     }
 }
@@ -29,6 +31,10 @@ pub async fn ensure_oss_provider_ready(
             codex_ollama::ensure_oss_ready(config)
                 .await
                 .map_err(|e| std::io::Error::other(format!("OSS setup failed: {e}")))?;
+        }
+        SKILL_PILOT_OSS_PROVIDER_ID => {
+            // Skill Pilot doesn't require upfront model downloading via CLI at this time.
+            // Setup and readiness are handled externally.
         }
         _ => {
             // Unknown provider, skip setup
@@ -51,6 +57,12 @@ mod tests {
     fn test_get_default_model_for_provider_ollama() {
         let result = get_default_model_for_oss_provider(OLLAMA_OSS_PROVIDER_ID);
         assert_eq!(result, Some(codex_ollama::DEFAULT_OSS_MODEL));
+    }
+
+    #[test]
+    fn test_get_default_model_for_provider_skill_pilot() {
+        let result = get_default_model_for_oss_provider(SKILL_PILOT_OSS_PROVIDER_ID);
+        assert_eq!(result, Some("skill-pilot-model"));
     }
 
     #[test]

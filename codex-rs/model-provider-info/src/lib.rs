@@ -391,11 +391,13 @@ impl ModelProviderInfo {
     }
 }
 
-pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;
-pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
-
 pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
 pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
+pub const SKILL_PILOT_OSS_PROVIDER_ID: &str = "skill_pilot";
+
+pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;
+pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
+pub const DEFAULT_SKILL_PILOT_PORT: u16 = 8080;
 
 /// Built-in default provider list.
 pub fn built_in_model_providers(
@@ -420,10 +422,41 @@ pub fn built_in_model_providers(
             LMSTUDIO_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
         ),
+        (
+            SKILL_PILOT_OSS_PROVIDER_ID,
+            create_skill_pilot_provider(),
+        ),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
     .collect()
+}
+
+pub fn create_skill_pilot_provider() -> ModelProviderInfo {
+    let base_url = std::env::var("SKILL_PILOT_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| format!("http://localhost:{}/v1", DEFAULT_SKILL_PILOT_PORT));
+
+    ModelProviderInfo {
+        name: "skill_pilot".into(),
+        base_url: Some(base_url),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    }
 }
 
 /// Merge configured providers into the built-in provider catalog.

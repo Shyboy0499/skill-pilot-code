@@ -53,7 +53,7 @@ COPY .devcontainer/codex-install/package.json \
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
-    && test "$(node -p "require('/opt/codex-install/package.json').dependencies['@openai/codex']")" = "${CODEX_NPM_VERSION}" \
+    && test "$(node -p "require('/opt/codex-install/package.json').dependencies['@skill-pilot/spcode']")" = "${CODEX_NPM_VERSION}" \
     && cd /opt/codex-install \
     && corepack pnpm install --prod --frozen-lockfile \
     && ln -s /opt/codex-install/node_modules/.bin/codex /usr/local/bin/codex \
