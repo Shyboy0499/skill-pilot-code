@@ -1,0 +1,19 @@
+{
+  "default": {
+    "llm": "openai",
+    // New key to support Skill Pilot for background tasks
+    "background_llm": "skill-pilot"
+  },
+  "providers": {
+    "openai": {
+      "name": "OpenAI",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "skill-pilot": {
+      "name": "Skill Pilot",
+      // Environment variables SKILL_PILOT_BASE_URL, SKILL_PILOT_API_KEY, SKILL_PILOT_MODEL
+      // will be used by the agent implementation.
+      "agent_binary": "core/bin/skill-pilot-agent"
+    }
+  }
+}
