@@ -38,7 +38,8 @@ const apiKey = process.env.SKILL_PILOT_API_KEY || 'no-key';
 const defaultModel = process.env.SKILL_PILOT_MODEL || 'gpt-4o';
 const model = options.model || defaultModel;
 
-const openai = new OpenAI({ baseURL, apiKey });
+process.env.OPENAI_BASE_URL = baseURL;
+process.env.OPENAI_API_KEY = apiKey;
 
 // Helper to load AGENTS.md
 function loadInstructions(agentDir: string): string {
@@ -69,7 +70,7 @@ function loadSkills(agentDir: string, skillsDir: string, allowedSkills?: string)
 }
 
 // Bash Tool implementation
-async function executeBash({ command }: { command: string }): Promise<string> {
+async function executeBash(command: string): Promise<string> {
   console.log(`[BASH] Executing: ${command}`);
   
   return new Promise((resolve) => {
@@ -94,20 +95,21 @@ async function executeBash({ command }: { command: string }): Promise<string> {
   });
 }
 
-const bashTool = {
+const bashTool: any = {
+  type: 'function',
   name: 'bash',
   description: 'Execute a bash command on the system. Use this to read files, run tests, or modify code.',
   parameters: z.object({
     command: z.string().describe('The shell command to execute.'),
   }),
-  run: executeBash,
+  run: async (args: any) => executeBash(args.command),
 };
 
 // Main execution
 async function main() {
   if (!userPrompt) {
-    console.error('No prompt provided.');
-    process.exit(1);
+    program.help();
+    process.exit(0);
   }
 
   const instructions = loadInstructions(options.agentDir);
@@ -124,7 +126,6 @@ async function main() {
 
   try {
     const result = await run(skillPilotAgent, userPrompt, {
-      client: openai,
       maxTurns: parseInt(options.maxRetries) * 5, // Buffering turns
     });
 

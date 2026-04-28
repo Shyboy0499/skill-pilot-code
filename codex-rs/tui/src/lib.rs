@@ -57,7 +57,6 @@ use codex_terminal_detection::terminal_info;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
 use codex_utils_oss::ensure_oss_provider_ready;
-use codex_utils_oss::get_default_model_for_oss_provider;
 use codex_utils_path as path_utils;
 use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
@@ -800,47 +799,59 @@ pub async fn run_main(
         .ok()
         .filter(|v| !v.trim().is_empty());
 
-    let (is_oss, provider_from_env) = if skill_pilot_env_url.is_some() {
-        (true, Some(codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID.to_string()))
-    } else {
-        (cli.oss, cli.oss_provider.clone())
-    };
+    let mut is_oss = cli.oss;
+    let mut model_provider_override = None;
+    let mut model_override = cli.model.clone();
 
-    let model_provider_override = if is_oss {
+    if skill_pilot_env_url.is_some() {
+        // Skill Pilot mode overrides EVERYTHING.
+        is_oss = false; // Disable standard OSS so we get full auth and /models behavior if needed.
+        
+        model_provider_override = Some(codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID.to_string());
+        
+        // If they didn't specify a model, use the default skill pilot one
+        if model_override.is_none() {
+            model_override = codex_utils_oss::get_default_model_for_oss_provider(
+                codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID
+            ).map(|s| s.to_string());
+        }
+    } else if is_oss {
         let resolved = resolve_oss_provider(
-            provider_from_env.as_deref(),
+            cli.oss_provider.as_deref(),
             &config_toml,
             cli.config_profile.clone(),
         );
 
         if let Some(provider) = resolved {
-            Some(provider)
+            model_provider_override = Some(provider);
         } else {
             // No provider configured, prompt the user
-            let provider = oss_selection::select_oss_provider(&codex_home).await?;
-            if provider == "__CANCELLED__" {
+            let provider_id = oss_selection::select_oss_provider(&codex_home).await?;
+            if provider_id == "__CANCELLED__" {
                 return Err(std::io::Error::other(
                     "OSS provider selection was cancelled by user",
                 ));
             }
-            Some(provider)
+            
+            // Re-resolve with the selected provider ID
+            model_provider_override = resolve_oss_provider(
+                Some(&provider_id),
+                &config_toml,
+                cli.config_profile.clone(),
+            );
         }
-    } else {
-        None
-    };
+    }
 
     // When using `--oss` or skill pilot env var, let the bootstrapper pick the model based on selected provider
-    let model = if let Some(model) = &cli.model {
-        Some(model.clone())
-    } else if is_oss {
-        // Use the provider from model_provider_override
-        model_provider_override
+    if model_override.is_none() && is_oss {
+         model_override = model_provider_override
             .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
-    } else {
-        None // No model specified, will use the default.
-    };
+            .and_then(|provider_id| codex_utils_oss::get_default_model_for_oss_provider(provider_id))
+            .map(std::borrow::ToOwned::to_owned);
+    }
+
+    // Determine the model
+    let model = model_override;
 
     let additional_dirs = cli.add_dir.clone();
 
@@ -952,6 +963,8 @@ pub async fn run_main(
     let feedback_layer = feedback.logger_layer();
     let feedback_metadata_layer = feedback.metadata_layer();
 
+    // In Skill Pilot mode, we don't want to run the OSS provider setup logic 
+    // because it's treated as a primary provider, not an OSS provider.
     if is_oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
         // Let's handle None case gracefully though just in case

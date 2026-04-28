@@ -441,8 +441,8 @@ pub fn create_skill_pilot_provider() -> ModelProviderInfo {
     ModelProviderInfo {
         name: "skill_pilot".into(),
         base_url: Some(base_url),
-        env_key: None,
-        env_key_instructions: None,
+        env_key: Some("SKILL_PILOT_API_KEY".into()),
+        env_key_instructions: Some("You can find your Skill Pilot API key at the dashboard.".into()),
         experimental_bearer_token: None,
         auth: None,
         aws: None,
