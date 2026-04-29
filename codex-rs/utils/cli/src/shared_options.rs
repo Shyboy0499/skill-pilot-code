@@ -59,6 +59,14 @@ pub struct SharedCliOptions {
     /// Additional directories that should be writable alongside the primary workspace.
     #[arg(long = "add-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
     pub add_dir: Vec<PathBuf>,
+
+    /// Directory scanned for SKILL.md files.
+    #[arg(long = "skills-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    pub skills_dir: Option<PathBuf>,
+
+    /// Comma-separated list of skills to load, or none to skip skills entirely.
+    #[arg(long = "skills", value_name = "SKILLS")]
+    pub skills: Option<String>,
 }
 
 impl SharedCliOptions {
@@ -77,6 +85,8 @@ impl SharedCliOptions {
             dangerously_bypass_approvals_and_sandbox,
             cwd,
             add_dir,
+            skills_dir,
+            skills,
         } = self;
         let Self {
             images: root_images,
@@ -89,6 +99,8 @@ impl SharedCliOptions {
             dangerously_bypass_approvals_and_sandbox: root_dangerously_bypass_approvals_and_sandbox,
             cwd: root_cwd,
             add_dir: root_add_dir,
+            skills_dir: root_skills_dir,
+            skills: root_skills,
         } = root;
 
         if model.is_none() {
@@ -124,6 +136,12 @@ impl SharedCliOptions {
             merged_add_dir.append(add_dir);
             *add_dir = merged_add_dir;
         }
+        if skills_dir.is_none() {
+            skills_dir.clone_from(root_skills_dir);
+        }
+        if skills.is_none() {
+            skills.clone_from(root_skills);
+        }
     }
 
     pub fn apply_subcommand_overrides(&mut self, subcommand: Self) {
@@ -141,6 +159,8 @@ impl SharedCliOptions {
             dangerously_bypass_approvals_and_sandbox,
             cwd,
             add_dir,
+            skills_dir,
+            skills,
         } = subcommand;
 
         if let Some(model) = model {
@@ -169,6 +189,12 @@ impl SharedCliOptions {
         }
         if !add_dir.is_empty() {
             self.add_dir.extend(add_dir);
+        }
+        if let Some(skills_dir) = skills_dir {
+            self.skills_dir = Some(skills_dir);
+        }
+        if let Some(skills) = skills {
+            self.skills = Some(skills);
         }
     }
 }

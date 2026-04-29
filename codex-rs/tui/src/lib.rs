@@ -871,6 +871,8 @@ pub async fn run_main(
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: is_oss.then_some(true),
         additional_writable_roots: additional_dirs,
+        skills_dir: cli.skills_dir.clone(),
+        skills: cli.skills.clone(),
         ..Default::default()
     };
 

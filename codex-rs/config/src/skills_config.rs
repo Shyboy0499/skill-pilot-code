@@ -33,6 +33,14 @@ pub struct SkillsConfig {
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<SkillConfig>,
+
+    /// Directory scanned for SKILL.md files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_dir: Option<AbsolutePathBuf>,
+
+    /// Comma-separated list of skills to load, or none to skip skills entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]

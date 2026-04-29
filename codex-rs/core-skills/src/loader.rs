@@ -332,11 +332,61 @@ async fn repo_agents_skill_roots(
     let Some(fs) = fs else {
         return Vec::new();
     };
+
+    let mut skills_dir_override: Option<AbsolutePathBuf> = None;
+    for layer in config_layer_stack.get_layers(
+        ConfigLayerStackOrdering::HighestPrecedenceFirst,
+        /*include_disabled*/ true,
+    ) {
+        if let Some(skills_value) = layer.config.get("skills") {
+            let skills: SkillsConfig = match skills_value.clone().try_into() {
+                Ok(skills) => skills,
+                Err(_) => continue,
+            };
+            if let Some(dir) = skills.skills_dir {
+                skills_dir_override = Some(dir);
+                break;
+            }
+        }
+    }
+
     let project_root_markers = project_root_markers_from_stack(config_layer_stack);
     let project_root = find_project_root(fs.as_ref(), cwd, &project_root_markers).await;
+
+    if let Some(dir) = skills_dir_override {
+        let abs_dir = AbsolutePathBuf::resolve_path_against_base(dir, project_root.as_path());
+        match fs.get_metadata(&abs_dir, /*sandbox*/ None).await {
+            Ok(metadata) if metadata.is_directory => {
+                return vec![SkillRoot {
+                    path: abs_dir,
+                    scope: SkillScope::Repo,
+                    file_system: Arc::clone(&fs),
+                }];
+            }
+            _ => {
+                tracing::warn!("explicit skills-dir not found: {}", abs_dir.display());
+            }
+        }
+    }
+
     let dirs = dirs_between_project_root_and_cwd(cwd, &project_root);
     let mut roots = Vec::new();
     for dir in dirs {
+        // Try the new .agent default
+        let agent_skills = dir.join(".agent");
+        match fs.get_metadata(&agent_skills, /*sandbox*/ None).await {
+            Ok(metadata) if metadata.is_directory => {
+                roots.push(SkillRoot {
+                    path: agent_skills,
+                    scope: SkillScope::Repo,
+                    file_system: Arc::clone(&fs),
+                });
+                continue; // Found it, move to next dir in path
+            }
+            _ => {}
+        }
+
+        // Fallback to legacy .agents/skills
         let agents_skills = dir.join(AGENTS_DIR_NAME).join(SKILLS_DIR_NAME);
         match fs.get_metadata(&agents_skills, /*sandbox*/ None).await {
             Ok(metadata) if metadata.is_directory => roots.push(SkillRoot {

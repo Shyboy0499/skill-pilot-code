@@ -246,6 +246,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         dangerously_bypass_approvals_and_sandbox,
         cwd,
         add_dir,
+        skills_dir,
+        skills,
     } = shared;
 
     let (_stdout_with_ansi, stderr_with_ansi) = match color {
@@ -409,6 +411,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
         additional_writable_roots: add_dir,
+        skills_dir,
+        skills,
     };
 
     let config = ConfigBuilder::default()

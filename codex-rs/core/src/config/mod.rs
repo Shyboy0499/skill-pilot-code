@@ -1446,6 +1446,10 @@ pub struct ConfigOverrides {
     pub ephemeral: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
+    /// Directory scanned for SKILL.md files.
+    pub skills_dir: Option<PathBuf>,
+    /// Comma-separated list of skills to load, or none to skip skills entirely.
+    pub skills: Option<String>,
 }
 
 /// Resolves the OSS provider from CLI override, profile config, or global config.

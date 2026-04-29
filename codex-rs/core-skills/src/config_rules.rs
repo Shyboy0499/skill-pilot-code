@@ -25,10 +25,13 @@ pub struct SkillConfigRule {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct SkillConfigRules {
     pub entries: Vec<SkillConfigRule>,
+    pub selection_override: Option<String>,
 }
 
 pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> SkillConfigRules {
     let mut entries = Vec::new();
+    let mut skills_selection_override: Option<String> = None;
+
     for layer in config_layer_stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ true,
@@ -51,6 +54,10 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
             }
         };
 
+        if let Some(selection) = &skills.skills {
+            skills_selection_override = Some(selection.clone());
+        }
+
         for entry in skills.config {
             let Some(selector) = skill_config_rule_selector(&entry) else {
                 continue;
@@ -65,7 +72,10 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
         }
     }
 
-    SkillConfigRules { entries }
+    SkillConfigRules {
+        entries,
+        selection_override: skills_selection_override,
+    }
 }
 
 pub fn resolve_disabled_skill_paths(
@@ -73,6 +83,23 @@ pub fn resolve_disabled_skill_paths(
     rules: &SkillConfigRules,
 ) -> HashSet<AbsolutePathBuf> {
     let mut disabled_paths = HashSet::new();
+
+    // If selection_override is present, it acts as a filter.
+    if let Some(selection) = &rules.selection_override {
+        if selection == "none" {
+            // Disable all skills
+            for skill in skills {
+                disabled_paths.insert(skill.path_to_skills_md.clone());
+            }
+        } else if selection != "all" {
+            let allowed_skills: HashSet<&str> = selection.split(',').collect();
+            for skill in skills {
+                if !allowed_skills.contains(skill.name.as_str()) {
+                    disabled_paths.insert(skill.path_to_skills_md.clone());
+                }
+            }
+        }
+    }
 
     for entry in &rules.entries {
         match &entry.selector {
