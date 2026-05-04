@@ -1681,6 +1681,8 @@ impl Config {
             tools_web_search_request: override_tools_web_search_request,
             ephemeral,
             additional_writable_roots,
+            skills_dir: _,
+            skills: _,
         } = overrides;
 
         if sandbox_mode.is_some() && permission_profile.is_some() {

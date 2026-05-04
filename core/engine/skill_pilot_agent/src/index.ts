@@ -35,7 +35,7 @@ const userPrompt = program.args[0];
 // Configuration from environment
 const baseURL = process.env.SKILL_PILOT_BASE_URL || 'http://localhost:8000/v1';
 const apiKey = process.env.SKILL_PILOT_API_KEY || 'no-key';
-const defaultModel = process.env.SKILL_PILOT_MODEL || 'gpt-4o';
+const defaultModel = process.env.SKILL_PILOT_MODEL || 'skill-pilot';
 const model = options.model || defaultModel;
 
 process.env.OPENAI_BASE_URL = baseURL;
@@ -116,13 +116,13 @@ async function main() {
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
 
   const skillPilotAgent = new Agent({
-    name: 'Skill Pilot',
+    name: 'Skill Pilot spcode',
     instructions: instructions + skillInstructions,
     model: model,
     tools: [bashTool],
   });
 
-  console.log(`Skill Pilot starting session with model: ${model}`);
+  console.log(`Skill Pilot spcode starting session with model: ${model}`);
 
   try {
     const result = await run(skillPilotAgent, userPrompt, {

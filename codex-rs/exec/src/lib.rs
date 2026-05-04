@@ -355,9 +355,19 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let run_loader_overrides = loader_overrides.clone();
     let run_cloud_requirements = cloud_requirements.clone();
 
-    let model_provider = if oss {
+    let skill_pilot_env_url = std::env::var("SKILL_PILOT_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+
+    let (is_oss, model_provider_id_override) = if skill_pilot_env_url.is_some() {
+        (false, Some(codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID.to_string()))
+    } else {
+        (oss, oss_provider.clone())
+    };
+
+    let model_provider = if is_oss {
         let resolved = resolve_oss_provider(
-            oss_provider.as_deref(),
+            model_provider_id_override.as_deref(),
             &config_toml,
             config_profile.clone(),
         );
@@ -370,13 +380,13 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
             ));
         }
     } else {
-        None // No OSS mode enabled
+        model_provider_id_override // For Skill Pilot mode
     };
 
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
+    // When using `--oss` or skill pilot mode, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = model_cli_arg {
         Some(model)
-    } else if oss {
+    } else if is_oss || skill_pilot_env_url.is_some() {
         model_provider
             .as_ref()
             .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
@@ -407,7 +417,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         personality: None,
         compact_prompt: None,
         include_apply_patch_tool: None,
-        show_raw_agent_reasoning: oss.then_some(true),
+        show_raw_agent_reasoning: (is_oss || skill_pilot_env_url.is_some()).then_some(true),
         tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
         additional_writable_roots: add_dir,

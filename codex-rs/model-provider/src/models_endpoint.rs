@@ -71,11 +71,9 @@ impl ModelsEndpointClient for OpenAiModelsEndpoint {
         self.provider_info.has_command_auth()
     }
 
-    async fn uses_codex_backend(&self) -> bool {
-        self.auth()
-            .await
-            .as_ref()
-            .is_some_and(CodexAuth::uses_codex_backend)
+    fn always_refresh_models(&self) -> bool {
+        // Always refresh if it's a custom provider (like Skill Pilot).
+        self.provider_info.is_custom() || self.provider_info.name != "openai"
     }
 
     async fn list_models(

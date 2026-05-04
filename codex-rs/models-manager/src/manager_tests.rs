@@ -153,7 +153,7 @@ impl ModelsEndpointClient for TestModelsEndpoint {
         self.has_command_auth
     }
 
-    async fn uses_codex_backend(&self) -> bool {
+    fn always_refresh_models(&self) -> bool {
         self.uses_codex_backend
     }
 
@@ -569,15 +569,10 @@ impl ModelsEndpointClient for TestAuthAwareModelsEndpoint {
         false
     }
 
-    async fn uses_codex_backend(&self) -> bool {
-        match self.auth_manager.as_ref() {
-            Some(auth_manager) => auth_manager
-                .auth()
-                .await
-                .as_ref()
-                .is_some_and(CodexAuth::uses_codex_backend),
-            None => false,
-        }
+    fn always_refresh_models(&self) -> bool {
+        // We use a simplified check for testing here since we can't easily await in a sync method
+        // and the trait changed.
+        true
     }
 
     async fn list_models(

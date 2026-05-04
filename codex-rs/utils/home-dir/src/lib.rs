@@ -56,7 +56,7 @@ fn find_codex_home_from_env(codex_home_env: Option<&str>) -> std::io::Result<Abs
                     "Could not find home directory",
                 )
             })?;
-            p.push(".codex");
+            p.push(".spcode");
             AbsolutePathBuf::from_absolute_path(p)
         }
     }

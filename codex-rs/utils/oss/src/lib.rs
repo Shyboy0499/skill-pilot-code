@@ -10,7 +10,7 @@ pub fn get_default_model_for_oss_provider(provider_id: &str) -> Option<&'static 
     match provider_id {
         LMSTUDIO_OSS_PROVIDER_ID => Some(codex_lmstudio::DEFAULT_OSS_MODEL),
         OLLAMA_OSS_PROVIDER_ID => Some(codex_ollama::DEFAULT_OSS_MODEL),
-        SKILL_PILOT_OSS_PROVIDER_ID => Some("skill-pilot-model"),
+        SKILL_PILOT_OSS_PROVIDER_ID => Some("skill-pilot"),
         _ => None,
     }
 }
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn test_get_default_model_for_provider_skill_pilot() {
         let result = get_default_model_for_oss_provider(SKILL_PILOT_OSS_PROVIDER_ID);
-        assert_eq!(result, Some("skill-pilot-model"));
+        assert_eq!(result, Some("skill-pilot"));
     }
 
     #[test]

@@ -1,8 +1,8 @@
-# Codex SDK
+# spcode SDK
 
-Embed the Codex agent in your workflows and apps.
+Embed the spcode agent in your workflows and apps.
 
-The TypeScript SDK wraps the `codex` CLI from `@skill-pilot/spcode`. It spawns the CLI and exchanges JSONL events over stdin/stdout.
+The TypeScript SDK wraps the `spcode` CLI from `@skill-pilot/spcode`. It spawns the CLI and exchanges JSONL events over stdin/stdout.
 
 ## Installation
 
@@ -15,10 +15,10 @@ Requires Node.js 18+.
 ## Quickstart
 
 ```typescript
-import { Codex } from "@skill-pilot/spcode-sdk";
+import { spcode } from "@skill-pilot/spcode-sdk";
 
-const codex = new Codex();
-const thread = codex.startThread();
+const spcode = new spcode();
+const thread = spcode.startThread();
 const turn = await thread.run("Diagnose the test failure and propose a fix");
 
 console.log(turn.finalResponse);
@@ -52,7 +52,7 @@ for await (const event of events) {
 
 ### Structured output
 
-The Codex agent can produce a JSON response that conforms to a specified schema. The schema can be provided for each turn as a plain JSON object.
+The spcode agent can produce a JSON response that conforms to a specified schema. The schema can be provided for each turn as a plain JSON object.
 
 ```typescript
 const schema = {
@@ -85,7 +85,7 @@ console.log(turn.finalResponse);
 
 ### Attaching images
 
-Provide structured input entries when you need to include images alongside text. Text entries are concatenated into the final prompt while image entries are passed to the Codex CLI via `--image`.
+Provide structured input entries when you need to include images alongside text. Text entries are concatenated into the final prompt while image entries are passed to the spcode CLI via `--image`.
 
 ```typescript
 const turn = await thread.run([
@@ -97,32 +97,32 @@ const turn = await thread.run([
 
 ### Resuming an existing thread
 
-Threads are persisted in `~/.codex/sessions`. If you lose the in-memory `Thread` object, reconstruct it with `resumeThread()` and keep going.
+Threads are persisted in `~/.spcode/sessions`. If you lose the in-memory `Thread` object, reconstruct it with `resumeThread()` and keep going.
 
 ```typescript
 const savedThreadId = process.env.CODEX_THREAD_ID!;
-const thread = codex.resumeThread(savedThreadId);
+const thread = spcode.resumeThread(savedThreadId);
 await thread.run("Implement the fix");
 ```
 
 ### Working directory controls
 
-Codex runs in the current working directory by default. To avoid unrecoverable errors, Codex requires the working directory to be a Git repository. You can skip the Git repository check by passing the `skipGitRepoCheck` option when creating a thread.
+spcode runs in the current working directory by default. To avoid unrecoverable errors, spcode requires the working directory to be a Git repository. You can skip the Git repository check by passing the `skipGitRepoCheck` option when creating a thread.
 
 ```typescript
-const thread = codex.startThread({
+const thread = spcode.startThread({
   workingDirectory: "/path/to/project",
   skipGitRepoCheck: true,
 });
 ```
 
-### Controlling the Codex CLI environment
+### Controlling the spcode CLI environment
 
-By default, the Codex CLI inherits the Node.js process environment. Provide the optional `env` parameter when instantiating the
-`Codex` client to fully control which variables the CLI receives—useful for sandboxed hosts like Electron apps.
+By default, the spcode CLI inherits the Node.js process environment. Provide the optional `env` parameter when instantiating the
+`spcode` client to fully control which variables the CLI receives—useful for sandboxed hosts like Electron apps.
 
 ```typescript
-const codex = new Codex({
+const spcode = new spcode({
   env: {
     PATH: "/usr/local/bin",
   },
@@ -134,11 +134,11 @@ The SDK still injects its required variables (such as `CODEX_API_KEY`) on top of
 
 ### Passing `--config` overrides
 
-Use the `config` option to provide additional Codex CLI configuration overrides. The SDK accepts a JSON object, flattens it
+Use the `config` option to provide additional spcode CLI configuration overrides. The SDK accepts a JSON object, flattens it
 into dotted paths, and serializes values as TOML literals before passing them as repeated `--config key=value` flags.
 
 ```typescript
-const codex = new Codex({
+const spcode = new spcode({
   config: {
     show_raw_agent_reasoning: true,
     sandbox_workspace_write: { network_access: true },

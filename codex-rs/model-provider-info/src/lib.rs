@@ -389,6 +389,13 @@ impl ModelProviderInfo {
     pub fn has_command_auth(&self) -> bool {
         self.auth.is_some()
     }
+
+    pub fn is_custom(&self) -> bool {
+        self.base_url.as_ref().is_some_and(|url| {
+            let normalized = url.trim().trim_end_matches('/');
+            normalized != "https://api.openai.com/v1" && normalized != "https://api.openai.com"
+        })
+    }
 }
 
 pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
