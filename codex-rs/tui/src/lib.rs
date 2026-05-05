@@ -813,7 +813,7 @@ pub async fn run_main(
         if model_override.is_none() {
             model_override = codex_utils_oss::get_default_model_for_oss_provider(
                 codex_model_provider_info::SKILL_PILOT_OSS_PROVIDER_ID
-            ).map(|s| s.to_string());
+            ).map(ToString::to_string);
         }
     } else if is_oss {
         let resolved = resolve_oss_provider(

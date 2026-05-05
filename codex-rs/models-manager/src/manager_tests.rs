@@ -544,15 +544,13 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
 
 #[derive(Debug)]
 struct TestAuthAwareModelsEndpoint {
-    auth_manager: Option<Arc<AuthManager>>,
     responses: Mutex<VecDeque<Vec<ModelInfo>>>,
     fetch_count: AtomicUsize,
 }
 
 impl TestAuthAwareModelsEndpoint {
-    fn new(auth_manager: Option<Arc<AuthManager>>, responses: Vec<Vec<ModelInfo>>) -> Arc<Self> {
+    fn new(_auth_manager: Option<Arc<AuthManager>>, responses: Vec<Vec<ModelInfo>>) -> Arc<Self> {
         Arc::new(Self {
-            auth_manager,
             responses: Mutex::new(responses.into()),
             fetch_count: AtomicUsize::new(0),
         })

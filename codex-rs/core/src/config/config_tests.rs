@@ -311,6 +311,8 @@ enabled = false
             bundled: Some(BundledSkillsConfig { enabled: false }),
             include_instructions: Some(false),
             config: Vec::new(),
+            skills_dir: None,
+            skills: None,
         })
     );
 }

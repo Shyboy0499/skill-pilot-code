@@ -3,7 +3,7 @@
   "version": "0.0.0-dev",
   "license": "Apache-2.0",
   "bin": {
-    "spcode": "bin/codex.js"
+    "spcode": "bin/spcode.js"
   },
   "type": "module",
   "engines": {

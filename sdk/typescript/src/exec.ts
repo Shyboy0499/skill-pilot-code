@@ -395,8 +395,8 @@ function findCodexPath() {
   }
 
   const archRoot = path.join(vendorRoot, targetTriple);
-  const codexBinaryName = process.platform === "win32" ? "codex.exe" : "codex";
-  const binaryPath = path.join(archRoot, "codex", codexBinaryName);
+  const codexBinaryName = process.platform === "win32" ? "spcode.exe" : "spcode";
+  const binaryPath = path.join(archRoot, "spcode", codexBinaryName);
 
   return binaryPath;
 }

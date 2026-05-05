@@ -443,7 +443,7 @@ pub fn create_skill_pilot_provider() -> ModelProviderInfo {
     let base_url = std::env::var("SKILL_PILOT_BASE_URL")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| format!("http://localhost:{}/v1", DEFAULT_SKILL_PILOT_PORT));
+        .unwrap_or_else(|| format!("http://localhost:{DEFAULT_SKILL_PILOT_PORT}/v1"));
 
     ModelProviderInfo {
         name: "skill_pilot".into(),

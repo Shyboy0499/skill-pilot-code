@@ -189,7 +189,7 @@ mod tests {
 
     fn provider(base_url: &str) -> Provider {
         Provider {
-            name: "test".to_string(),
+            name: "openai".to_string(),
             base_url: base_url.to_string(),
             query_params: None,
             headers: HeaderMap::new(),
