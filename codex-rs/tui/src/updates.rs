@@ -30,15 +30,17 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
 
     if match &info {
         None => true,
-        Some(info) => info.last_checked_at < Utc::now() - Duration::hours(20),
+        Some(info) => info.last_checked_at < Utc::now() - Duration::hours(4),
     } {
         // Refresh the cached latest version in the background so TUI startup
         // isn’t blocked by a network call. The UI reads the previously cached
         // value (if any) for this run; the next run shows the banner if needed.
         tokio::spawn(async move {
+            tracing::info!("Checking for updates...");
             check_for_update(&version_file, action)
                 .await
                 .inspect_err(|e| tracing::error!("Failed to update version: {e}"))
+                .inspect(|_| tracing::info!("Update check completed successfully."));
         });
     }
 
