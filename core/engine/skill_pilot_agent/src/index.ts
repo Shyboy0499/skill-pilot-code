@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { Agent, run } from '@openai/agents';
-import { OpenAI } from 'openai';
+import type { FunctionTool } from '@openai/agents-core';
 import { z } from 'zod';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
@@ -14,15 +14,10 @@ const program = new Command();
 program
   .name('skill-pilot-agent')
   .description('Skill Pilot Agent CLI')
-  .option('--sandbox <yes|no>', 'Run in a sandbox environment', 'yes')
-  .option('--auto <yes|no>', 'Automatically use tools', 'yes')
-  .option('--network <yes|no>', 'Allow network access', 'no')
   .option('--model <model>', 'Override the default model')
   .option('--agent-dir <path>', 'Root directory where the agent operates', process.cwd())
-  .option('--log-level <level>', 'Log level', 'info')
   .option('--max-retries <number>', 'Max number of retries', '3')
   .option('--timeout <seconds>', 'Task timeout', '60')
-  .option('--bash-commands <commands>', 'Allowed bash commands')
   .option('--skills-dir <path>', 'Skills directory', '.agent')
   .option('--skills <skills>', 'Allowed skills')
   .argument('[prompt]', 'The user prompt');
@@ -31,6 +26,18 @@ program.parse();
 
 const options = program.opts();
 const userPrompt = program.args[0];
+
+// Validate numeric options
+const timeout = parseInt(options.timeout);
+if (isNaN(timeout) || timeout <= 0) {
+  console.error(`Invalid --timeout value: ${options.timeout}. Must be a positive number.`);
+  process.exit(1);
+}
+const maxRetries = parseInt(options.maxRetries);
+if (isNaN(maxRetries) || maxRetries <= 0) {
+  console.error(`Invalid --max-retries value: ${options.maxRetries}. Must be a positive number.`);
+  process.exit(1);
+}
 
 // Configuration from environment
 const baseURL = process.env.SKILL_PILOT_BASE_URL || 'http://localhost:8000/v1';
@@ -56,15 +63,39 @@ function loadSkills(agentDir: string, skillsDir: string, allowedSkills?: string)
   if (!fs.existsSync(fullSkillsPath)) return '';
 
   let skillInstructions = '\n\nAvailable Skills:\n';
-  const skillFiles = fs.readdirSync(fullSkillsPath);
-  
   const filter = allowedSkills ? allowedSkills.split(',') : null;
 
-  for (const file of skillFiles) {
-    if (filter && !filter.includes(file) && !filter.includes(path.parse(file).name)) continue;
-    
-    const content = fs.readFileSync(path.join(fullSkillsPath, file), 'utf8');
-    skillInstructions += `\n--- Skill: ${file} ---\n${content}\n`;
+  function scanDir(dir: string): string[] {
+    const results: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results.push(...scanDir(entryPath));
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push(entryPath);
+      }
+    }
+    return results;
+  }
+
+  const mdFiles = scanDir(fullSkillsPath);
+
+  for (const filePath of mdFiles) {
+    const relativeName = path.relative(fullSkillsPath, filePath).replace(/\\/g, '/');
+    const parsedName = path.parse(relativeName).name;
+
+    const dirParts = path.dirname(relativeName).split('/');
+    const matchesFilter = filter
+      ? filter.some((f) => f === parsedName || f === relativeName || dirParts.includes(f))
+      : true;
+    if (!matchesFilter) continue;
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      skillInstructions += `\n--- Skill: ${relativeName} ---\n${content}\n`;
+    } catch {
+      // Skip unreadable files
+    }
   }
   return skillInstructions;
 }
@@ -72,37 +103,62 @@ function loadSkills(agentDir: string, skillsDir: string, allowedSkills?: string)
 // Bash Tool implementation
 async function executeBash(command: string): Promise<string> {
   console.log(`[BASH] Executing: ${command}`);
-  
+  const timeoutMs = timeout * 1000;
+  const maxOutput = 100_000; // 100KB cap
+
   return new Promise((resolve) => {
-    const child = spawn(command, { shell: true, cwd: options.agentDir });
+    const child = spawn(command, {
+      shell: true,
+      cwd: options.agentDir,
+    });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
 
-    child.stdout.on('data', (data) => { stdout += data; });
-    child.stderr.on('data', (data) => { stderr += data; });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      // Force kill after 5s if SIGTERM didn't work
+      setTimeout(() => {
+        if (!child.killed) child.kill('SIGKILL');
+      }, 5000);
+    }, timeoutMs);
+
+    child.stdout.on('data', (data: string) => {
+      if (stdout.length < maxOutput) stdout += data;
+    });
+    child.stderr.on('data', (data: string) => {
+      if (stderr.length < maxOutput) stderr += data;
+    });
 
     child.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout || 'Command executed successfully (no output).');
+      clearTimeout(timer);
+      if (timedOut) {
+        resolve(`Command timed out after ${timeout}s.\nPartial output:\n${stdout.substring(0, 5000)}`);
+      } else if (code === 0) {
+        const out = stdout || 'Command executed successfully (no output).';
+        resolve(out.length > maxOutput ? out.substring(0, maxOutput) + '\n...(truncated)' : out);
       } else {
-        resolve(`Error (exit code ${code}):\n${stderr}\n${stdout}`);
+        const msg = `Error (exit code ${code}):\n${stderr}\n${stdout}`;
+        resolve(msg.length > maxOutput ? msg.substring(0, maxOutput) + '\n...(truncated)' : msg);
       }
     });
 
     child.on('error', (err) => {
+      clearTimeout(timer);
       resolve(`Failed to spawn process: ${err.message}`);
     });
   });
 }
 
-const bashTool: any = {
+const bashTool: FunctionTool = {
   type: 'function',
   name: 'bash',
   description: 'Execute a bash command on the system. Use this to read files, run tests, or modify code.',
   parameters: z.object({
     command: z.string().describe('The shell command to execute.'),
   }),
-  run: async (args: any) => executeBash(args.command),
+  run: async (args) => executeBash(args.command as string),
 };
 
 // Main execution
@@ -126,7 +182,7 @@ async function main() {
 
   try {
     const result = await run(skillPilotAgent, userPrompt, {
-      maxTurns: parseInt(options.maxRetries) * 5, // Buffering turns
+      maxTurns: maxRetries * 5,
     });
 
     console.log('\n--- Final Output ---\n');

@@ -773,9 +773,20 @@ impl ConfigBuilder {
             Some(codex_home) => AbsolutePathBuf::from_absolute_path(codex_home)?,
             None => find_codex_home()?,
         };
-        let cli_overrides = cli_overrides.unwrap_or_default();
+        let mut cli_overrides = cli_overrides.unwrap_or_default();
         let mut harness_overrides = harness_overrides.unwrap_or_default();
         let loader_overrides = loader_overrides.unwrap_or_default();
+        // Convert --skills-dir and --skills CLI args into -c style overrides
+        // so they flow through the config layer stack to the skills loader.
+        if let Some(ref dir) = harness_overrides.skills_dir {
+            cli_overrides.push((
+                "skills.skills_dir".to_string(),
+                toml::Value::String(dir.to_string_lossy().to_string()),
+            ));
+        }
+        if let Some(ref skills) = harness_overrides.skills {
+            cli_overrides.push(("skills.skills".to_string(), toml::Value::String(skills.clone())));
+        }
         let cwd_override = harness_overrides.cwd.as_deref().or(fallback_cwd.as_deref());
         let cwd = match cwd_override {
             Some(path) => AbsolutePathBuf::relative_to_current_dir(path)?,
