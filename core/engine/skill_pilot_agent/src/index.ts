@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { Agent, run } from '@openai/agents';
-import type { FunctionTool } from '@openai/agents-core';
 import { z } from 'zod';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
@@ -20,6 +20,7 @@ program
   .option('--timeout <seconds>', 'Task timeout', '60')
   .option('--skills-dir <path>', 'Skills directory', '.agent')
   .option('--skills <skills>', 'Allowed skills')
+  .option('--approve-tools <yes|no>', 'Require approval before running bash commands', 'no')
   .argument('[prompt]', 'The user prompt');
 
 program.parse();
@@ -37,6 +38,30 @@ const maxRetries = parseInt(options.maxRetries);
 if (isNaN(maxRetries) || maxRetries <= 0) {
   console.error(`Invalid --max-retries value: ${options.maxRetries}. Must be a positive number.`);
   process.exit(1);
+}
+
+// Tool approval gate
+const requireApproval = options.approveTools === 'yes';
+let approveAll = false;
+
+function promptApproval(command: string): Promise<boolean> {
+  if (!requireApproval || approveAll) return Promise.resolve(true);
+
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => {
+    rl.question(`[APPROVE] Run: ${command}\n(y)es / (n)o / (a)ll: `, (answer) => {
+      rl.close();
+      const a = answer.trim().toLowerCase();
+      if (a === 'a' || a === 'all') {
+        approveAll = true;
+        resolve(true);
+      } else if (a === 'y' || a === 'yes') {
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+  });
 }
 
 // Configuration from environment
@@ -102,7 +127,9 @@ function loadSkills(agentDir: string, skillsDir: string, allowedSkills?: string)
 
 // Bash Tool implementation
 async function executeBash(command: string): Promise<string> {
-  console.log(`[BASH] Executing: ${command}`);
+  const approved = await promptApproval(command);
+  if (!approved) return 'Command denied by user.';
+
   const timeoutMs = timeout * 1000;
   const maxOutput = 100_000; // 100KB cap
 
@@ -151,14 +178,14 @@ async function executeBash(command: string): Promise<string> {
   });
 }
 
-const bashTool: FunctionTool = {
-  type: 'function',
+const bashTool = {
+  type: 'function' as const,
   name: 'bash',
   description: 'Execute a bash command on the system. Use this to read files, run tests, or modify code.',
   parameters: z.object({
     command: z.string().describe('The shell command to execute.'),
   }),
-  run: async (args) => executeBash(args.command as string),
+  run: async (args: { command: string }) => executeBash(args.command),
 };
 
 // Main execution
@@ -175,7 +202,8 @@ async function main() {
     name: 'Skill Pilot spcode',
     instructions: instructions + skillInstructions,
     model: model,
-    tools: [bashTool],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: [bashTool as any],
   });
 
   console.log(`Skill Pilot spcode starting session with model: ${model}`);

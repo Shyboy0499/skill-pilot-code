@@ -31,7 +31,8 @@ result
 
 # cli tools
 CLAUDE.md
-.claude/
+.claude/*
+!.claude/skills/
 AGENTS.override.md
 
 # caches
