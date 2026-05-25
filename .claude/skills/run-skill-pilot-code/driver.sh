@@ -55,9 +55,9 @@ fi
 if ! $BUILD_ONLY; then
   echo "==> Smoke-testing skill-pilot-agent..."
 
-  # Verify it starts and shows help without a prompt
-  npx ts-node "$AGENT_DIR/src/index.ts" 2>&1 | grep -q "Usage:" || fail "agent help not shown"
-  pass "agent --help (no prompt)"
+  # Verify it starts and shows help
+  npx ts-node "$AGENT_DIR/src/index.ts" --help 2>&1 | grep -q "Usage:" || fail "agent help not shown"
+  pass "agent --help"
 
   # Verify --skills-dir loads a real skill
   mkdir -p /tmp/test-skill-pilot-skill

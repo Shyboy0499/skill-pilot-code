@@ -6,6 +6,9 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 AGENT_ROOT="$SCRIPT_DIR/../engine/skill_pilot_agent"
 
-# Use npx to run the TypeScript implementation directly for development.
-# Preserve the caller's CWD so that AGENTS.md and --skills-dir paths resolve correctly.
-npx ts-node "$AGENT_ROOT/src/index.ts" "$@"
+# Prefer compiled output for production, fall back to ts-node for development.
+if [ -f "$AGENT_ROOT/dist/index.js" ]; then
+  node "$AGENT_ROOT/dist/index.js" "$@"
+else
+  npx ts-node "$AGENT_ROOT/src/index.ts" "$@"
+fi

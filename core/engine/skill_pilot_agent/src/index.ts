@@ -3,9 +3,13 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { Agent, run } from '@openai/agents';
+import type { AgentInputItem, StreamEvent } from '@openai/agents-core';
 import { z } from 'zod';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
+import { createTools } from './tools';
+import { startRepl, type ReplCommand } from './repl';
+import { saveSession, loadSession, listSessions, forkSession } from './session';
 
 dotenv.config();
 
@@ -188,33 +192,156 @@ const bashTool = {
   run: async (args: { command: string }) => executeBash(args.command),
 };
 
-// Main execution
-async function main() {
-  if (!userPrompt) {
-    program.help();
-    process.exit(0);
-  }
-
+function buildAgent(): Agent {
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
 
-  const skillPilotAgent = new Agent({
+  const multiTurnPrompt = `
+When working on a task:
+- Ask clarifying questions if anything is ambiguous.
+- Report progress as you work — what you found, what you're doing next.
+- At the end of each major step, ask the user if they want changes or have follow-up tasks.
+- If the user's request is clear, proceed without unnecessary questions.
+`;
+
+  const fileTools = createTools(options.agentDir);
+
+  return new Agent({
     name: 'Skill Pilot spcode',
-    instructions: instructions + skillInstructions,
+    instructions: instructions + multiTurnPrompt + skillInstructions,
     model: model,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: [bashTool as any],
+    tools: [bashTool as any, ...fileTools.map((t) => t as any)],
   });
+}
 
+async function runStreaming(agent: Agent, prompt: string, conversation?: AgentInputItem[]) {
+  const input: any = conversation && conversation.length > 0 ? [...conversation, { type: 'message', role: 'user', content: prompt }] : prompt;
+
+  const result = await run(agent, input, {
+    maxTurns: maxRetries * 5,
+    stream: true,
+  }) as any;
+
+  console.log('');
+
+  const collectedItems: AgentInputItem[] = [...(conversation || [])];
+
+  try {
+    for await (const event of result as AsyncIterable<StreamEvent>) {
+      const evt = event as any;
+
+      if (evt.type === 'raw_model_stream') {
+        if (evt.data?.delta) {
+          process.stdout.write(evt.data.delta);
+        }
+      } else if (evt.type === 'run_item_stream') {
+        const item = evt.item;
+        if (item) {
+          collectedItems.push(item);
+          if (item.type === 'tool_call') {
+            console.log(`\n[TOOL:${item.name}] ${item.arguments?.command || item.arguments?.file_path || ''}`);
+          } else if (item.type === 'tool_result') {
+            const output = item.output?.substring?.(0, 200) || '';
+            console.log(`[RESULT] ${output}`);
+          }
+        }
+      } else if (evt.type === 'agent_updated') {
+        // Agent handoff — no-op for now
+      }
+    }
+  } catch (err: any) {
+    if (!err.message?.includes('aborted') && !err.message?.includes('cancelled')) {
+      throw err;
+    }
+  }
+
+  console.log('');
+  return collectedItems;
+}
+
+// Main execution
+async function main() {
+  const instructions = loadInstructions(options.agentDir);
+  const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
+
+  // No prompt + TTY → REPL mode. No prompt + pipe → show help.
+  if (!userPrompt) {
+    if (!process.stdin.isTTY) {
+      program.help();
+      process.exit(0);
+    }
+
+    const agent = buildAgent();
+    console.log(`Skill Pilot spcode starting session with model: ${model}`);
+
+    let conversation: AgentInputItem[] = [];
+    let sessionId: string | null = null;
+
+    startRepl(async (cmd: ReplCommand) => {
+      switch (cmd.type) {
+        case 'prompt':
+          console.log('');
+          conversation = await runStreaming(agent, cmd.text, conversation.length > 0 ? conversation : undefined);
+          if (sessionId) saveSession(sessionId, conversation);
+          break;
+
+        case 'save':
+          if (conversation.length === 0) {
+            console.log('Nothing to save yet.');
+          } else {
+            sessionId = sessionId || `session-${Date.now()}`;
+            saveSession(sessionId, conversation);
+          }
+          break;
+
+        case 'load': {
+          const items = loadSession(cmd.id);
+          if (items) {
+            conversation = items;
+            sessionId = cmd.id;
+          }
+          break;
+        }
+
+        case 'fork': {
+          const newId = forkSession(cmd.id);
+          if (newId) {
+            const items = loadSession(newId);
+            if (items) { conversation = items; sessionId = newId; }
+          }
+          break;
+        }
+
+        case 'list':
+          listSessions();
+          break;
+
+        case 'clear':
+          conversation = [];
+          sessionId = null;
+          console.log('Conversation cleared.');
+          break;
+
+        case 'help':
+          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list');
+          break;
+
+        case 'exit':
+          break;
+      }
+    });
+    return;
+  }
+
+  // One-shot mode — user provided a prompt
+  const agent = buildAgent();
   console.log(`Skill Pilot spcode starting session with model: ${model}`);
 
   try {
-    const result = await run(skillPilotAgent, userPrompt, {
-      maxTurns: maxRetries * 5,
-    });
-
-    console.log('\n--- Final Output ---\n');
-    console.log(result.finalOutput);
+    const conversation = await runStreaming(agent, userPrompt);
+    const sessionId = `session-${Date.now()}`;
+    saveSession(sessionId, conversation);
   } catch (error: any) {
     console.error('Error during agent execution:', error.message);
     process.exit(1);
