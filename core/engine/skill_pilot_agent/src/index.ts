@@ -71,8 +71,12 @@ function promptApproval(command: string): Promise<boolean> {
 // Configuration from environment
 const baseURL = process.env.SKILL_PILOT_BASE_URL || 'http://localhost:8000/v1';
 const apiKey = process.env.SKILL_PILOT_API_KEY || 'no-key';
-const defaultModel = process.env.SKILL_PILOT_MODEL || 'skill-pilot';
-const model = options.model || defaultModel;
+const model = options.model;
+
+if (!model) {
+  console.error('Error: --model <model> is required (e.g. --model gpt-5.5, --model deepseek-chat)');
+  process.exit(1);
+}
 
 process.env.OPENAI_BASE_URL = baseURL;
 process.env.OPENAI_API_KEY = apiKey;

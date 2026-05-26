@@ -71,7 +71,7 @@ SKILLEOF
 
   # Run agent with the test skill, expect it to reach LLM connection stage
   # (connection error is expected — proves skills loaded and agent started)
-  OUTPUT=$(npx ts-node "$AGENT_DIR/src/index.ts" --skills-dir /tmp/test-skill-pilot-skill --skills test "hello" 2>&1) || true
+  OUTPUT=$(npx ts-node "$AGENT_DIR/src/index.ts" --skills-dir /tmp/test-skill-pilot-skill --skills test --model test "hello" 2>&1) || true
   echo "$OUTPUT" | grep -q "Skill Pilot spcode starting session" || fail "agent did not start with --skills-dir"
   pass "agent starts with --skills-dir and --skills"
 
