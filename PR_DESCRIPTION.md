@@ -26,6 +26,36 @@ Added two new CLI arguments to both `exec` and TUI modes:
 - Added a Bash wrapper at `core/bin/skill-pilot-agent`.
 - Configured `config/ai_providers.json5` to route `default.background_llm` tasks to this new agent.
 
+### 5. Multi-Provider Agent with Direct API Access
+- **Architecture:** Replaced the single-proxy pattern (`SKILL_PILOT_BASE_URL`) with direct per-provider API access. Each provider specifies its own base URL, API key env var, and protocol adapter.
+- **Provider Config:** `providers.json` maps model names to providers (OpenAI, DeepSeek, Anthropic). New providers require one adapter + one config entry.
+- **Adapters:**
+  - **OpenAI** — pass-through to `@openai/agents` SDK. Supports any OpenAI-compatible endpoint (OpenAI, DeepSeek, Groq).
+  - **Anthropic** — native `@anthropic-ai/sdk` integration with tool schema translation and multi-turn tool execution loop.
+  - **Gemini** — native `@google/generative-ai` integration with tool schema translation and multi-turn tool execution loop.
+- **Reasoning Effort:** Added `--effort` CLI flag (`low`, `medium`, `high`, `xhigh`). Mapped to provider-specific parameters (OpenAI: `reasoning.effort`, Anthropic: `thinking.budget_tokens`, Gemini: `thinkingBudget`).
+- **Error Handling:** Unknown model, missing API key, and config file errors all fail loudly with actionable messages listing available options.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `core/engine/skill_pilot_agent/package.json` | Added `@anthropic-ai/sdk`, `@google/generative-ai` |
+| `core/engine/skill_pilot_agent/providers.json` | New — provider configuration |
+| `core/engine/skill_pilot_agent/src/providers/types.ts` | New — shared provider types |
+| `core/engine/skill_pilot_agent/src/providers/config.ts` | New — config loader and model resolution |
+| `core/engine/skill_pilot_agent/src/providers/openai.ts` | New — OpenAI-compatible adapter |
+| `core/engine/skill_pilot_agent/src/providers/anthropic.ts` | New — Anthropic adapter |
+| `core/engine/skill_pilot_agent/src/providers/gemini.ts` | New — Gemini adapter |
+| `core/engine/skill_pilot_agent/src/index.ts` | Modified — wired provider registry, `--effort` flag, adapter routing |
+
+### Smoke Test Results
+- [x] Missing `--model` lists all available models from providers.json
+- [x] Unknown model errors with full list of available models
+- [x] Missing API key shows provider-specific error (e.g., `OPENAI_API_KEY not set. Required by provider 'openai' for model 'gpt-5.5'.`)
+- [x] `--effort high` flag accepted, provider info shown at startup
+- [x] `--help` shows `--effort` option
+- [x] TypeScript compilation and build pass clean
+
 ## Acceptance Criteria Checklist
 All provided test cases have been verified locally:
 - [x] **Test 1:** Fresh install without `SKILL_PILOT_BASE_URL` behaves as vanilla Codex (OpenAI login).
