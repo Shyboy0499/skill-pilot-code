@@ -30,6 +30,7 @@ program
   .option('--skills-dir <path>', 'Skills directory', '.agent')
   .option('--skills <skills>', 'Allowed skills')
   .option('--effort <effort>', 'Reasoning effort: low, medium, high, xhigh')
+  .option('--providers-config <path>', 'Path to providers.json config file')
   .option('--approve-tools <yes|no>', 'Require approval before running bash commands', 'no')
   .argument('[prompt]', 'The user prompt');
 
@@ -75,7 +76,9 @@ function promptApproval(command: string): Promise<boolean> {
 }
 
 // Load provider config
-const providersJsonPath = path.resolve(__dirname, '../providers.json');
+const providersJsonPath = options.providersConfig
+  ? path.resolve(options.providersConfig)
+  : path.resolve(__dirname, '../providers.json');
 loadProviderConfig(providersJsonPath);
 
 const model = options.model;
@@ -87,6 +90,10 @@ if (!model) {
 
 const resolved = resolveModel(model);
 const effort: string | undefined = options.effort || undefined;
+
+if (effort && resolved.provider.effort_levels.length === 0) {
+  console.error(`Warning: --effort ${effort} ignored. Provider '${resolved.provider.id}' does not support reasoning effort.`);
+}
 
 // Helper to load AGENTS.md
 function loadInstructions(agentDir: string): string {
