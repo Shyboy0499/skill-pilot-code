@@ -2,6 +2,11 @@ import { Agent, run } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents-core';
 import type { ResolvedProvider } from './types';
 
+export interface OpenAIRunResult {
+  stream: AsyncIterable<any>;
+  collectedItems: AgentInputItem[];
+}
+
 export function buildOpenAIAgent(
   resolved: ResolvedProvider,
   instructions: string,
@@ -30,7 +35,7 @@ export async function runOpenAIAgent(
   prompt: string,
   conversation: AgentInputItem[],
   maxTurns: number,
-): Promise<{ stream: AsyncIterable<any>; collectedItems: AgentInputItem[] }> {
+): Promise<OpenAIRunResult> {
   const input: any =
     conversation.length > 0
       ? [...conversation, { type: 'message', role: 'user', content: prompt } as any]
