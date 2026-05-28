@@ -2,14 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { Agent, run } from '@openai/agents';
-import type { AgentInputItem, StreamEvent } from '@openai/agents-core';
+import { Agent } from '@openai/agents';
+import type { AgentInputItem } from '@openai/agents-core';
 import { z } from 'zod';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
 import { createTools } from './tools';
 import { startRepl, type ReplCommand } from './repl';
 import { saveSession, loadSession, listSessions, forkSession } from './session';
+import { loadProviderConfig, resolveModel, listModels } from './providers/config';
+import { buildOpenAIAgent, runOpenAIAgent } from './providers/openai';
+import { runAnthropicAgent } from './providers/anthropic';
+import { runGeminiAgent } from './providers/gemini';
+import type { ResolvedProvider } from './providers/types';
 
 dotenv.config();
 
@@ -24,6 +29,7 @@ program
   .option('--timeout <seconds>', 'Task timeout', '60')
   .option('--skills-dir <path>', 'Skills directory', '.agent')
   .option('--skills <skills>', 'Allowed skills')
+  .option('--effort <effort>', 'Reasoning effort: low, medium, high, xhigh')
   .option('--approve-tools <yes|no>', 'Require approval before running bash commands', 'no')
   .argument('[prompt]', 'The user prompt');
 
@@ -68,18 +74,19 @@ function promptApproval(command: string): Promise<boolean> {
   });
 }
 
-// Configuration from environment
-const baseURL = process.env.SKILL_PILOT_BASE_URL || 'http://localhost:8000/v1';
-const apiKey = process.env.SKILL_PILOT_API_KEY || 'no-key';
-const model = options.model;
+// Load provider config
+const providersJsonPath = path.resolve(__dirname, '../providers.json');
+loadProviderConfig(providersJsonPath);
 
+const model = options.model;
 if (!model) {
-  console.error('Error: --model <model> is required (e.g. --model gpt-5.5, --model deepseek-chat)');
+  const available = listModels().join(', ');
+  console.error(`Error: --model <model> is required. Available: ${available}`);
   process.exit(1);
 }
 
-process.env.OPENAI_BASE_URL = baseURL;
-process.env.OPENAI_API_KEY = apiKey;
+const resolved = resolveModel(model);
+const effort: string | undefined = options.effort || undefined;
 
 // Helper to load AGENTS.md
 function loadInstructions(agentDir: string): string {
@@ -210,29 +217,69 @@ When working on a task:
 
   const fileTools = createTools(options.agentDir);
 
-  return new Agent({
-    name: 'Skill Pilot spcode',
-    instructions: instructions + multiTurnPrompt + skillInstructions,
-    model: model,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: [bashTool as any, ...fileTools.map((t) => t as any)],
-  });
+  return buildOpenAIAgent(
+    resolved,
+    instructions + multiTurnPrompt + skillInstructions,
+    [bashTool as any, ...fileTools.map((t) => t as any)],
+    effort,
+  );
 }
 
-async function runStreaming(agent: Agent, prompt: string, conversation?: AgentInputItem[]) {
-  const input: any = conversation && conversation.length > 0 ? [...conversation, { type: 'message', role: 'user', content: prompt }] : prompt;
+async function runAgentStream(
+  prompt: string,
+  conversation: AgentInputItem[],
+): Promise<AgentInputItem[]> {
+  const instructions = loadInstructions(options.agentDir);
+  const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
+  const systemPrompt = instructions + skillInstructions;
 
-  const result = await run(agent, input, {
-    maxTurns: maxRetries * 5,
-    stream: true,
-  }) as any;
+  if (resolved.provider.protocol === 'openai') {
+    const agent = buildAgent();
+    const { stream, collectedItems } = await runOpenAIAgent(
+      agent,
+      prompt,
+      conversation,
+      maxRetries * 5,
+    );
+    return await consumeStream(stream, conversation);
+  }
+
+  // Non-OpenAI adapters
+  const fileTools = createTools(options.agentDir);
+  const allTools = [bashTool as any, ...fileTools.map((t) => t as any)];
+  const collectedItems: AgentInputItem[] = [...conversation];
+
+  const adapterStream =
+    resolved.provider.protocol === 'anthropic'
+      ? runAnthropicAgent(resolved, systemPrompt, prompt, allTools, effort)
+      : runGeminiAgent(resolved, systemPrompt, prompt, allTools, effort);
+
+  for await (const event of adapterStream) {
+    if (event.type === 'text_delta' && event.text) {
+      process.stdout.write(event.text);
+    } else if (event.type === 'tool_call') {
+      console.log(`\n[TOOL:${event.toolName}] ${JSON.stringify(event.toolArgs)}`);
+    } else if (event.type === 'tool_result') {
+      console.log(`[RESULT] ${event.toolOutput}`);
+    } else if (event.type === 'error') {
+      console.error(`\n[ERROR] ${event.error}`);
+    }
+  }
 
   console.log('');
+  return collectedItems;
+}
 
-  const collectedItems: AgentInputItem[] = [...(conversation || [])];
+async function consumeStream(
+  stream: AsyncIterable<any>,
+  conversation: AgentInputItem[],
+): Promise<AgentInputItem[]> {
+  console.log('');
+
+  const collectedItems: AgentInputItem[] = [...conversation];
 
   try {
-    for await (const event of result as AsyncIterable<StreamEvent>) {
+    for await (const event of stream) {
       const evt = event as any;
 
       if (evt.type === 'raw_model_stream') {
@@ -276,8 +323,7 @@ async function main() {
       process.exit(0);
     }
 
-    const agent = buildAgent();
-    console.log(`Skill Pilot spcode starting session with model: ${model}`);
+    console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})`);
 
     let conversation: AgentInputItem[] = [];
     let sessionId: string | null = null;
@@ -286,7 +332,7 @@ async function main() {
       switch (cmd.type) {
         case 'prompt':
           console.log('');
-          conversation = await runStreaming(agent, cmd.text, conversation.length > 0 ? conversation : undefined);
+          conversation = await runAgentStream(cmd.text, conversation.length > 0 ? conversation : []);
           if (sessionId) saveSession(sessionId, conversation);
           break;
 
@@ -339,11 +385,10 @@ async function main() {
   }
 
   // One-shot mode — user provided a prompt
-  const agent = buildAgent();
-  console.log(`Skill Pilot spcode starting session with model: ${model}`);
+  console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})`);
 
   try {
-    const conversation = await runStreaming(agent, userPrompt);
+    const conversation = await runAgentStream(userPrompt, []);
     const sessionId = `session-${Date.now()}`;
     saveSession(sessionId, conversation);
   } catch (error: any) {
