@@ -32,7 +32,9 @@ export function createSandboxedBash(options: { agentDir: string }) {
     type: 'function' as const,
     name: 'sandbox',
     description:
-      'Execute a bash command in an isolated sandbox directory. Safer than raw bash for running untrusted code, builds, or tests.',
+      'Execute a bash command in an isolated sandbox directory. Safer than raw bash for ' +
+      'running untrusted code, builds, or tests. Network isolation is best-effort via proxy ' +
+      'blocking; full isolation requires OS sandboxing.',
     parameters: z.object({
       command: z.string().describe('The shell command to execute in the sandbox.'),
       keep: z
@@ -58,6 +60,16 @@ export function createSandboxedBash(options: { agentDir: string }) {
       if (process.platform === 'darwin' || process.platform === 'linux') {
         const prefix = 'ulimit -t 30 -v 1048576';
         wrappedCommand = `${prefix}; ${command}`;
+      }
+
+      // Network isolation: block outbound network unless explicitly allowed.
+      // This is best-effort via proxy blocking. Full isolation requires
+      // sandbox-exec (macOS) or unshare -n / network namespaces (Linux).
+      if (!allow_network) {
+        const blockEnv =
+          'export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 ' +
+          'HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 no_proxy=';
+        wrappedCommand = `${blockEnv}; ${wrappedCommand}`;
       }
 
       // -- 3. Execute --------------------------------------------------------

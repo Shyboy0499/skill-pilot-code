@@ -47,13 +47,13 @@ export class MCPClient {
     });
 
     this.process.on('exit', (code: number | null) => {
-      if (code !== 0 && code !== null) {
-        const msg = `MCP process exited with code ${code}`;
-        for (const [, pending] of this.pending) {
-          pending.reject(new Error(msg));
-        }
-        this.pending.clear();
+      const msg = code !== 0 && code !== null
+        ? `MCP process exited with code ${code}`
+        : 'MCP process exited';
+      for (const [, pending] of this.pending) {
+        pending.reject(new Error(msg));
       }
+      this.pending.clear();
     });
 
     // Send initialize request
