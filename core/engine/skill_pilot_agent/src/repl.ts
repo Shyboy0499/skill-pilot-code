@@ -8,7 +8,9 @@ export type ReplCommand =
   | { type: 'load'; id: string }
   | { type: 'list' }
   | { type: 'fork'; id: string }
-  | { type: 'help' };
+  | { type: 'help' }
+  | { type: 'models' }
+  | { type: 'switch-model'; model: string };
 
 export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void {
   const rl = createInterface({
@@ -25,6 +27,8 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
   console.log('  /load <id>     Load a saved session');
   console.log('  /fork <id>     Fork a saved session');
   console.log('  /list          List saved sessions');
+  console.log('  /models        List available models');
+  console.log('  /model <name>  Switch to a different model');
   console.log('');
 
   rl.prompt();
@@ -48,10 +52,14 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
       cmd = { type: 'list' };
     } else if (trimmed === '/help') {
       cmd = { type: 'help' };
+    } else if (trimmed === '/models') {
+      cmd = { type: 'models' };
     } else if (trimmed.startsWith('/load ')) {
       cmd = { type: 'load', id: trimmed.slice(6).trim() };
     } else if (trimmed.startsWith('/fork ')) {
       cmd = { type: 'fork', id: trimmed.slice(6).trim() };
+    } else if (trimmed.startsWith('/model ')) {
+      cmd = { type: 'switch-model', model: trimmed.slice(7).trim() };
     } else {
       cmd = { type: 'prompt', text: trimmed };
     }

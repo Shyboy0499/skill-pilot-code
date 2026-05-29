@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { Agent } from '@openai/agents';
+import { Agent, applyPatchTool } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents-core';
 import { z } from 'zod';
 import { Command } from 'commander';
@@ -81,14 +81,14 @@ const providersJsonPath = options.providersConfig
   : path.resolve(__dirname, '../providers.json');
 loadProviderConfig(providersJsonPath);
 
-const model = options.model;
+let model = options.model;
 if (!model) {
   const available = listModels().join(', ');
   console.error(`Error: --model <model> is required. Available: ${available}`);
   process.exit(1);
 }
 
-const resolved = resolveModel(model);
+let resolved = resolveModel(model);
 const effort: string | undefined = options.effort || undefined;
 
 if (effort && resolved.provider.effort_levels.length === 0) {
@@ -227,7 +227,7 @@ When working on a task:
   return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
-    [bashTool as any, ...fileTools.map((t) => t as any)],
+    [applyPatchTool({}) as any, bashTool as any, ...fileTools.map((t) => t as any)],
     effort,
   );
 }
@@ -253,7 +253,7 @@ async function runAgentStream(
 
   // Non-OpenAI adapters
   const fileTools = createTools(options.agentDir);
-  const allTools = [bashTool as any, ...fileTools.map((t) => t as any)];
+  const allTools = [applyPatchTool({}) as any, bashTool as any, ...fileTools.map((t) => t as any)];
   const collectedItems: AgentInputItem[] = [...conversation];
 
   const adapterStream =
@@ -381,8 +381,70 @@ async function main() {
           break;
 
         case 'help':
-          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list');
+          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name>');
           break;
+
+        case 'models': {
+          const allModels = listModels();
+          console.log('\nAvailable models:');
+          // Re-read providers.json to map models to providers
+          try {
+            const raw = fs.readFileSync(providersJsonPath, 'utf8');
+            const data = JSON.parse(raw);
+            for (const provider of data.providers) {
+              for (const m of provider.models) {
+                const marker = m === model ? ' (current)' : '';
+                console.log(`  ${m.padEnd(22)} [${provider.id}]${marker}`);
+              }
+            }
+          } catch {
+            for (const m of allModels) {
+              const marker = m === model ? ' (current)' : '';
+              console.log(`  ${m}${marker}`);
+            }
+          }
+          console.log('');
+          break;
+        }
+
+        case 'switch-model': {
+          const allModels = listModels();
+          if (!allModels.includes(cmd.model)) {
+            console.log(`\nUnknown model '${cmd.model}'. Available models:`);
+            for (const m of allModels) {
+              console.log(`  ${m}`);
+            }
+            console.log('');
+            break;
+          }
+          // Validate API key without calling resolveModel (which calls process.exit on failure)
+          let providerId = 'unknown';
+          let apiKeyEnv = '';
+          try {
+            const raw = fs.readFileSync(providersJsonPath, 'utf8');
+            const data = JSON.parse(raw);
+            for (const provider of data.providers) {
+              if (provider.models.includes(cmd.model)) {
+                providerId = provider.id;
+                apiKeyEnv = provider.api_key_env;
+                break;
+              }
+            }
+          } catch {
+            // Should not happen since we already loaded config successfully
+          }
+          if (apiKeyEnv && !process.env[apiKeyEnv]) {
+            console.log(`\nCannot switch to '${cmd.model}': ${apiKeyEnv} is not set. Required by provider '${providerId}'.`);
+            console.log('');
+            break;
+          }
+          // resolveModel should now succeed since model exists and API key is set
+          const newResolved = resolveModel(cmd.model);
+          resolved = newResolved;
+          model = cmd.model;
+          console.log(`\nSwitched to model: ${model} (provider: ${resolved.provider.id})\n`);
+          break;
+        }
 
         case 'exit':
           break;
