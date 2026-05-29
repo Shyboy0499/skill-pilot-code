@@ -61,15 +61,17 @@ export function resolveModel(model: string): ResolvedProvider {
     process.exit(1);
   }
 
-  const apiKey = process.env[provider.api_key_env];
+  return { provider, model };
+}
+
+export function checkApiKey(resolved: ResolvedProvider): void {
+  const apiKey = process.env[resolved.provider.api_key_env];
   if (!apiKey) {
     console.error(
-      `Error: ${provider.api_key_env} not set. Required by provider '${provider.id}' for model '${model}'.`
+      `Error: ${resolved.provider.api_key_env} not set. Required by provider '${resolved.provider.id}' for model '${resolved.model}'.`
     );
     process.exit(1);
   }
-
-  return { provider, model };
 }
 
 export function getDefaultModel(): string | null {

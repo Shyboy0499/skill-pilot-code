@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 import { createTools } from './tools';
 import { startRepl, type ReplCommand } from './repl';
 import { saveSession, loadSession, listSessions, forkSession } from './session';
-import { loadProviderConfig, resolveModel, listModels } from './providers/config';
+import { loadProviderConfig, resolveModel, listModels, checkApiKey } from './providers/config';
 import { buildOpenAIAgent, runOpenAIAgent } from './providers/openai';
 import { runAnthropicAgent } from './providers/anthropic';
 import { runGeminiAgent } from './providers/gemini';
@@ -49,6 +49,11 @@ if (isNaN(timeout) || timeout <= 0) {
 const maxRetries = parseInt(options.maxRetries);
 if (isNaN(maxRetries) || maxRetries <= 0) {
   console.error(`Invalid --max-retries value: ${options.maxRetries}. Must be a positive number.`);
+  process.exit(1);
+}
+
+if (options.approveTools !== 'yes' && options.approveTools !== 'no') {
+  console.error(`Invalid --approve-tools value: ${options.approveTools}. Must be 'yes' or 'no'.`);
   process.exit(1);
 }
 
@@ -461,6 +466,8 @@ async function runAgentStream(
   prompt: string,
   conversation: AgentInputItem[],
 ): Promise<AgentInputItem[]> {
+  checkApiKey(resolved);
+
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
   const systemPrompt = instructions + skillInstructions;
@@ -642,29 +649,8 @@ async function main() {
             console.log('');
             break;
           }
-          // Validate API key without calling resolveModel (which calls process.exit on failure)
-          let providerId = 'unknown';
-          let apiKeyEnv = '';
-          try {
-            const raw = fs.readFileSync(providersJsonPath, 'utf8');
-            const data = JSON.parse(raw);
-            for (const provider of data.providers) {
-              if (provider.models.includes(cmd.model)) {
-                providerId = provider.id;
-                apiKeyEnv = provider.api_key_env;
-                break;
-              }
-            }
-          } catch {
-            // Should not happen since we already loaded config successfully
-          }
-          if (apiKeyEnv && !process.env[apiKeyEnv]) {
-            console.log(`\nCannot switch to '${cmd.model}': ${apiKeyEnv} is not set. Required by provider '${providerId}'.`);
-            console.log('');
-            break;
-          }
-          // resolveModel should now succeed since model exists and API key is set
           const newResolved = resolveModel(cmd.model);
+          checkApiKey(newResolved);
           resolved = newResolved;
           model = cmd.model;
           console.log(`\nSwitched to model: ${model} (provider: ${resolved.provider.id})\n`);
