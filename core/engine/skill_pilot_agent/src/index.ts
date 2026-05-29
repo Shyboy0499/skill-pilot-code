@@ -210,7 +210,7 @@ const bashTool = {
   run: async (args: { command: string }) => executeBash(args.command),
 };
 
-function buildAgent(): Agent {
+async function buildAgent(): Promise<Agent> {
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
 
@@ -224,7 +224,7 @@ When working on a task:
 
   const fileTools = createTools(options.agentDir);
 
-  return buildOpenAIAgent(
+  return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
     [bashTool as any, ...fileTools.map((t) => t as any)],
@@ -241,7 +241,7 @@ async function runAgentStream(
   const systemPrompt = instructions + skillInstructions;
 
   if (resolved.provider.protocol === 'openai') {
-    const agent = buildAgent();
+    const agent = await buildAgent();
     const { stream, collectedItems } = await runOpenAIAgent(
       agent,
       prompt,
@@ -289,11 +289,11 @@ async function consumeStream(
     for await (const event of stream) {
       const evt = event as any;
 
-      if (evt.type === 'raw_model_stream') {
+      if (evt.type === 'raw_model_stream_event') {
         if (evt.data?.delta) {
           process.stdout.write(evt.data.delta);
         }
-      } else if (evt.type === 'run_item_stream') {
+      } else if (evt.type === 'run_item_stream_event') {
         const item = evt.item;
         if (item) {
           collectedItems.push(item);
@@ -304,7 +304,7 @@ async function consumeStream(
             console.log(`[RESULT] ${output}`);
           }
         }
-      } else if (evt.type === 'agent_updated') {
+      } else if (evt.type === 'agent_updated_stream_event') {
         // Agent handoff — no-op for now
       }
     }
