@@ -661,7 +661,7 @@ async function main() {
           break;
 
         case 'help':
-          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name>');
+          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name> | /tools');
           break;
 
         case 'models': {
