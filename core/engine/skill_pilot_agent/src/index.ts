@@ -447,7 +447,7 @@ async function runAgentStream(
 
   // Non-OpenAI adapters
   const fileTools = createTools(options.agentDir);
-  const allTools = [applyPatchTool({}) as any, bashTool as any, ...fileTools.map((t) => t as any)];
+  const allTools = [patchTool as any, bashTool as any, ...fileTools.map((t) => t as any)];
   const collectedItems: AgentInputItem[] = [...conversation];
 
   const adapterStream =
