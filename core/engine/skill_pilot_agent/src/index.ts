@@ -15,6 +15,7 @@ import { buildOpenAIAgent, runOpenAIAgent } from './providers/openai';
 import { runAnthropicAgent } from './providers/anthropic';
 import { runGeminiAgent } from './providers/gemini';
 import type { ResolvedProvider } from './providers/types';
+import { executeBashStreaming, consumeStreamingOutput } from './streaming/tool-stream';
 
 dotenv.config();
 
@@ -335,6 +336,36 @@ const bashTool = {
   run: async (args: { command: string }) => executeBash(args.command),
 };
 
+const bashStreamTool = {
+  type: 'function' as const,
+  name: 'bash_stream',
+  description: 'Execute a bash command with real-time streaming output. Use this for long-running commands where you want to see progress.',
+  parameters: z.object({
+    command: z.string().describe('The shell command to execute.'),
+  }),
+  run: async (args: { command: string }) => {
+    const approved = await promptApproval(args.command);
+    if (!approved) return 'Command denied by user.';
+
+    console.log(`\n[STREAM] ${args.command.substring(0, 80)}...`);
+    const stream = executeBashStreaming(args.command, {
+      timeoutMs: timeout * 1000,
+      maxOutputBytes: 100_000,
+      cwd: options.agentDir,
+    });
+
+    return await consumeStreamingOutput(stream, (chunk) => {
+      if (chunk.type === 'stdout' && chunk.data) {
+        process.stdout.write(chunk.data);
+      } else if (chunk.type === 'stderr' && chunk.data) {
+        process.stderr.write(chunk.data);
+      } else if (chunk.type === 'error' && chunk.data) {
+        console.error(`\n[ERROR] ${chunk.data}`);
+      }
+    });
+  },
+};
+
 // apply_patch editor -- implements the Editor interface for local filesystem V4A diffs.
 function createLocalEditor(agentDir: string) {
   function resolveOpPath(filePath: string): string {
@@ -421,7 +452,7 @@ When working on a task:
   return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
-    [patchTool as any, bashTool as any, ...fileTools.map((t) => t as any)],
+    [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any)],
     effort,
   );
 }
@@ -447,7 +478,7 @@ async function runAgentStream(
 
   // Non-OpenAI adapters
   const fileTools = createTools(options.agentDir);
-  const allTools = [patchTool as any, bashTool as any, ...fileTools.map((t) => t as any)];
+  const allTools = [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any)];
   const collectedItems: AgentInputItem[] = [...conversation];
 
   const adapterStream =
