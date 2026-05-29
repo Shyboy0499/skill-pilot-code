@@ -104,46 +104,171 @@ function loadInstructions(agentDir: string): string {
   return 'You are a helpful coding assistant named Skill Pilot.';
 }
 
-// Helper to load skills
+// Find .claude/skills/ directories by walking up from agentDir to the filesystem root.
+function findAncestorClaudeSkillsDirs(agentDir: string): string[] {
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  let current = path.resolve(agentDir);
+
+  while (true) {
+    const candidate = path.join(current, '.claude', 'skills');
+    if (!seen.has(candidate) && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      dirs.push(candidate);
+    }
+    seen.add(candidate);
+
+    const parent = path.dirname(current);
+    if (parent === current) break; // reached filesystem root
+    current = parent;
+  }
+  return dirs;
+}
+
+// Extract a simple YAML field value (single-line, quoted or unquoted).
+function extractYamlField(fmText: string, field: string): string {
+  const re = new RegExp(`^${field}\\s*:\\s*(.+)$`, 'm');
+  const m = fmText.match(re);
+  if (!m) return '';
+  let val = m[1].trim();
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    val = val.slice(1, -1);
+  }
+  return val;
+}
+
+// Parse simple YAML frontmatter from a markdown string.
+// Returns { name, description, body } or null if no valid frontmatter.
+function parseFrontmatter(content: string): { name: string; description: string; body: string } | null {
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return null;
+
+  const rest = content.slice(content.indexOf('\n') + 1);
+  const endIdx = rest.indexOf('\n---\n');
+  if (endIdx === -1) {
+    const endIdx2 = rest.indexOf('\r\n---\r\n');
+    if (endIdx2 === -1) return null;
+    const fmText = rest.slice(0, endIdx2);
+    const bodyStart = endIdx2 + '\r\n---\r\n'.length;
+    const name = extractYamlField(fmText, 'name');
+    const description = extractYamlField(fmText, 'description');
+    if (!name) return null;
+    return { name, description, body: rest.slice(bodyStart).trim() };
+  }
+
+  const fmText = rest.slice(0, endIdx);
+  const bodyStart = endIdx + '\n---\n'.length;
+  const name = extractYamlField(fmText, 'name');
+  const description = extractYamlField(fmText, 'description');
+  if (!name) return null;
+  return { name, description, body: rest.slice(bodyStart).trim() };
+}
+
+// Load Claude Code-style skills from .claude/skills/<name>/SKILL.md directories.
+function loadClaudeSkills(agentDir: string, allowedSkills?: string): string {
+  const claudeDirs = findAncestorClaudeSkillsDirs(agentDir);
+  if (claudeDirs.length === 0) return '';
+
+  const filter = allowedSkills ? allowedSkills.split(',') : null;
+  let skillInstructions = '';
+
+  for (const claudeDir of claudeDirs) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(claudeDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillDirName = entry.name;
+      const skillMdPath = path.join(claudeDir, skillDirName, 'SKILL.md');
+
+      if (!fs.existsSync(skillMdPath)) continue;
+
+      const content = fs.readFileSync(skillMdPath, 'utf8');
+      const parsed = parseFrontmatter(content);
+      if (!parsed) {
+        // No frontmatter — treat the whole file as the skill body, use dir name as skill name
+        if (filter && !filter.some((f) => f === skillDirName)) continue;
+        skillInstructions += `\n--- Skill: ${skillDirName} ---\n${content.trim()}\n`;
+        continue;
+      }
+
+      // Check filter against frontmatter name or directory name
+      if (filter && !filter.some((f) => f === parsed.name || f === skillDirName)) continue;
+
+      const descLine = parsed.description ? `${parsed.description}\n\n` : '';
+      skillInstructions += `\n--- Skill: ${parsed.name} ---\n${descLine}${parsed.body}\n`;
+    }
+  }
+
+  return skillInstructions;
+}
+
+// Helper to load skills from both the --skills-dir path and .claude/skills/.
 function loadSkills(agentDir: string, skillsDir: string, allowedSkills?: string): string {
   const fullSkillsPath = path.resolve(agentDir, skillsDir);
-  if (!fs.existsSync(fullSkillsPath)) return '';
-
-  let skillInstructions = '\n\nAvailable Skills:\n';
   const filter = allowedSkills ? allowedSkills.split(',') : null;
 
-  function scanDir(dir: string): string[] {
-    const results: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const entryPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        results.push(...scanDir(entryPath));
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        results.push(entryPath);
+  let skillInstructions = '';
+
+  // 1. Scan --skills-dir for .md files
+  if (fs.existsSync(fullSkillsPath)) {
+    function scanDir(dir: string): string[] {
+      const results: string[] = [];
+      let dirEntries: fs.Dirent[];
+      try {
+        dirEntries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return results;
+      }
+      for (const entry of dirEntries) {
+        const entryPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...scanDir(entryPath));
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          results.push(entryPath);
+        }
+      }
+      return results;
+    }
+
+    const mdFiles = scanDir(fullSkillsPath);
+
+    if (mdFiles.length > 0) {
+      skillInstructions += '\n\nAvailable Skills:\n';
+
+      for (const filePath of mdFiles) {
+        const relativeName = path.relative(fullSkillsPath, filePath).replace(/\\/g, '/');
+        const parsedName = path.parse(relativeName).name;
+
+        const dirParts = path.dirname(relativeName).split('/');
+        const matchesFilter = filter
+          ? filter.some((f) => f === parsedName || f === relativeName || dirParts.includes(f))
+          : true;
+        if (!matchesFilter) continue;
+
+        try {
+          const content = fs.readFileSync(filePath, 'utf8');
+          skillInstructions += `\n--- Skill: ${relativeName} ---\n${content}\n`;
+        } catch {
+          // Skip unreadable files
+        }
       }
     }
-    return results;
   }
 
-  const mdFiles = scanDir(fullSkillsPath);
-
-  for (const filePath of mdFiles) {
-    const relativeName = path.relative(fullSkillsPath, filePath).replace(/\\/g, '/');
-    const parsedName = path.parse(relativeName).name;
-
-    const dirParts = path.dirname(relativeName).split('/');
-    const matchesFilter = filter
-      ? filter.some((f) => f === parsedName || f === relativeName || dirParts.includes(f))
-      : true;
-    if (!matchesFilter) continue;
-
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      skillInstructions += `\n--- Skill: ${relativeName} ---\n${content}\n`;
-    } catch {
-      // Skip unreadable files
+  // 2. Load Claude Code-style skills from .claude/skills/
+  const claudeSkills = loadClaudeSkills(agentDir, allowedSkills);
+  if (claudeSkills) {
+    if (skillInstructions) {
+      skillInstructions += '\n';
+    } else {
+      skillInstructions += '\n\nAvailable Skills:\n';
     }
+    skillInstructions += claudeSkills;
   }
+
   return skillInstructions;
 }
 
@@ -210,6 +335,75 @@ const bashTool = {
   run: async (args: { command: string }) => executeBash(args.command),
 };
 
+// apply_patch editor -- implements the Editor interface for local filesystem V4A diffs.
+function createLocalEditor(agentDir: string) {
+  function resolveOpPath(filePath: string): string {
+    if (path.isAbsolute(filePath)) return filePath;
+    return path.resolve(agentDir, filePath);
+  }
+
+  /** Parse a V4A diff string into an array of {search, replace} blocks. */
+  function parseV4ADiff(diff: string): { search: string; replace: string }[] {
+    const blocks: { search: string; replace: string }[] = [];
+    const marker = '<<<<<<< SEARCH';
+    let idx = 0;
+    while ((idx = diff.indexOf(marker, idx)) !== -1) {
+      const searchContentStart = diff.indexOf('\n', idx + marker.length);
+      if (searchContentStart === -1) break;
+      const separator = diff.indexOf('\n=======', searchContentStart);
+      if (separator === -1) break;
+      const replaceEnd = diff.indexOf('\n>>>>>>> REPLACE', separator);
+      if (replaceEnd === -1) break;
+      const search = diff.substring(searchContentStart + 1, separator);
+      const replace = diff.substring(separator + '\n======='.length + 1, replaceEnd);
+      blocks.push({ search, replace });
+      idx = replaceEnd + '\n>>>>>>> REPLACE'.length;
+    }
+    return blocks;
+  }
+
+  return {
+    async createFile(operation: { path: string; diff: string }) {
+      const fullPath = resolveOpPath(operation.path);
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(fullPath, operation.diff, 'utf8');
+      return { status: 'completed' as const, output: `Created ${operation.path}` };
+    },
+
+    async updateFile(operation: { path: string; diff: string }) {
+      const fullPath = resolveOpPath(operation.path);
+      if (!fs.existsSync(fullPath)) {
+        return { status: 'failed' as const, output: `File not found: ${operation.path}` };
+      }
+      let content = fs.readFileSync(fullPath, 'utf8');
+      const blocks = parseV4ADiff(operation.diff);
+      if (blocks.length === 0) {
+        return { status: 'failed' as const, output: 'No valid SEARCH/REPLACE blocks found in diff.' };
+      }
+      for (const { search, replace } of blocks) {
+        if (!content.includes(search)) {
+          return { status: 'failed' as const, output: `Search block not found in ${operation.path}: "${search.substring(0, 100)}"` };
+        }
+        content = content.replace(search, replace);
+      }
+      fs.writeFileSync(fullPath, content, 'utf8');
+      return { status: 'completed' as const, output: `Updated ${operation.path}` };
+    },
+
+    async deleteFile(operation: { path: string }) {
+      const fullPath = resolveOpPath(operation.path);
+      if (!fs.existsSync(fullPath)) {
+        return { status: 'failed' as const, output: `File not found: ${operation.path}` };
+      }
+      fs.unlinkSync(fullPath);
+      return { status: 'completed' as const, output: `Deleted ${operation.path}` };
+    },
+  };
+}
+
+const patchTool = applyPatchTool({ editor: createLocalEditor(options.agentDir) });
+
 async function buildAgent(): Promise<Agent> {
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
@@ -227,7 +421,7 @@ When working on a task:
   return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
-    [applyPatchTool({}) as any, bashTool as any, ...fileTools.map((t) => t as any)],
+    [patchTool as any, bashTool as any, ...fileTools.map((t) => t as any)],
     effort,
   );
 }
