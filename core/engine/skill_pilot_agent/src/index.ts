@@ -614,8 +614,13 @@ async function main() {
       switch (cmd.type) {
         case 'prompt':
           console.log('');
-          conversation = await runAgentStream(cmd.text, conversation.length > 0 ? conversation : []);
-          if (sessionId) saveSession(sessionId, conversation);
+          try {
+            conversation = await runAgentStream(cmd.text, conversation.length > 0 ? conversation : []);
+            if (sessionId) saveSession(sessionId, conversation);
+          } catch (err: any) {
+            console.error(`\n[ERROR] ${err.message || err}`);
+            console.error('Session continues. You can try again or /model to switch providers.\n');
+          }
           break;
 
         case 'save':
