@@ -16,6 +16,8 @@ import { runAnthropicAgent } from './providers/anthropic';
 import { runGeminiAgent } from './providers/gemini';
 import type { ResolvedProvider } from './providers/types';
 import { executeBashStreaming, consumeStreamingOutput } from './streaming/tool-stream';
+import { MCPClient, loadMCPTools } from './mcp/client';
+import type { MCPClientOptions } from './mcp/types';
 
 dotenv.config();
 
@@ -33,6 +35,7 @@ program
   .option('--effort <effort>', 'Reasoning effort: low, medium, high, xhigh')
   .option('--providers-config <path>', 'Path to providers.json config file')
   .option('--approve-tools <yes|no>', 'Require approval before running bash commands', 'no')
+  .option('--mcp-server <json>', 'MCP server config: {"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem"]}')
   .argument('[prompt]', 'The user prompt');
 
 program.parse();
@@ -55,6 +58,24 @@ if (isNaN(maxRetries) || maxRetries <= 0) {
 if (options.approveTools !== 'yes' && options.approveTools !== 'no') {
   console.error(`Invalid --approve-tools value: ${options.approveTools}. Must be 'yes' or 'no'.`);
   process.exit(1);
+}
+
+// MCP client setup
+let mcpClient: MCPClient | null = null;
+let mcpTools: any[] = [];
+
+let mcpServerConfig: MCPClientOptions | null = null;
+if (options.mcpServer) {
+  try {
+    mcpServerConfig = JSON.parse(options.mcpServer) as MCPClientOptions;
+    if (!mcpServerConfig.command) {
+      console.error('Error: --mcp-server JSON must include "command" field.');
+      process.exit(1);
+    }
+  } catch {
+    console.error('Error: Invalid --mcp-server JSON.');
+    process.exit(1);
+  }
 }
 
 // Tool approval gate
@@ -457,7 +478,7 @@ When working on a task:
   return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
-    [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any)],
+    [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools],
     effort,
   );
 }
@@ -485,7 +506,7 @@ async function runAgentStream(
 
   // Non-OpenAI adapters
   const fileTools = createTools(options.agentDir);
-  const allTools = [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any)];
+  const allTools = [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools];
   const collectedItems: AgentInputItem[] = [...conversation];
 
   const adapterStream =
@@ -562,7 +583,29 @@ async function main() {
       process.exit(0);
     }
 
-    console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})`);
+    // Connect to MCP server and load tools
+    if (mcpServerConfig) {
+      mcpClient = new MCPClient(mcpServerConfig);
+      try {
+        await mcpClient.connect();
+        mcpTools = await loadMCPTools(mcpClient);
+        console.error(`Loaded ${mcpTools.length} MCP tools from ${mcpServerConfig.command}`);
+      } catch (err: any) {
+        console.error(`Warning: Failed to load MCP tools: ${err.message}`);
+        mcpClient = null;
+        mcpTools = [];
+      }
+    }
+
+    // Cleanup MCP client on exit
+    process.on('exit', () => {
+      if (mcpClient) {
+        mcpClient.disconnect();
+      }
+    });
+
+    const mcpInfo = mcpTools.length > 0 ? ` | MCP tools: ${mcpTools.length}` : '';
+    console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})${mcpInfo}`);
 
     let conversation: AgentInputItem[] = [];
     let sessionId: string | null = null;
@@ -665,7 +708,25 @@ async function main() {
   }
 
   // One-shot mode — user provided a prompt
-  console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})`);
+  // Connect to MCP server and load tools (one-shot mode)
+  if (mcpServerConfig && !mcpClient) {
+    mcpClient = new MCPClient(mcpServerConfig);
+    try {
+      await mcpClient.connect();
+      mcpTools = await loadMCPTools(mcpClient);
+      console.error(`Loaded ${mcpTools.length} MCP tools from ${mcpServerConfig.command}`);
+    } catch (err: any) {
+      console.error(`Warning: Failed to load MCP tools: ${err.message}`);
+      mcpClient = null;
+      mcpTools = [];
+    }
+    process.on('exit', () => {
+      if (mcpClient) mcpClient.disconnect();
+    });
+  }
+
+  const mcpInfoOneShot = mcpTools.length > 0 ? ` | MCP tools: ${mcpTools.length}` : '';
+  console.log(`Skill Pilot spcode starting session with model: ${model} (provider: ${resolved.provider.id})${mcpInfoOneShot}`);
 
   try {
     const conversation = await runAgentStream(userPrompt, []);
