@@ -14,7 +14,7 @@
       "api_key_env": "DEEPSEEK_API_KEY",
       "protocol": "openai",
       "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
-      "effort_levels": []
+      "effort_levels": ["low", "medium", "high", "xhigh"]
     },
     {
       "id": "anthropic",
