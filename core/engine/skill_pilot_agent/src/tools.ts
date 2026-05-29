@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { webFetchTool, webSearchTool } from './tools/web';
+import { watchTool, watchFileTool } from './tools/watch';
+import { createSandboxedBash } from './tools/sandbox';
 
 type ToolContext = { agentDir: string };
 
@@ -189,6 +192,7 @@ export const grepTool = {
 // All tools with context injection
 export function createTools(agentDir: string): any[] {
   const ctx: ToolContext = { agentDir };
+  const sandboxedBashTool = createSandboxedBash({ agentDir });
 
   return [
     { ...readTool, run: (args: any) => readTool.run(args, ctx) },
@@ -196,5 +200,13 @@ export function createTools(agentDir: string): any[] {
     { ...editTool, run: (args: any) => editTool.run(args, ctx) },
     { ...globTool, run: (args: any) => globTool.run(args, ctx) },
     { ...grepTool, run: (args: any) => grepTool.run(args, ctx) },
+    // Web tools (no context needed — self-contained URL operations)
+    webFetchTool,
+    webSearchTool,
+    // Sandboxed bash (agentDir baked in via factory)
+    sandboxedBashTool,
+    // File watcher tools (need agentDir for path resolution)
+    { ...watchTool, run: (args: any) => watchTool.run(args, ctx) },
+    { ...watchFileTool, run: (args: any) => watchFileTool.run(args, ctx) },
   ];
 }
