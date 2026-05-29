@@ -687,6 +687,23 @@ async function main() {
           break;
         }
 
+        case 'tools': {
+          const fileTools = createTools(options.agentDir);
+          const allToolNames = [
+            'apply_patch',
+            'bash',
+            'bash_stream',
+            ...fileTools.map((t: any) => t.name),
+            ...mcpTools.map((t: any) => t.name),
+          ];
+          console.log(`\nAvailable tools (${allToolNames.length}):`);
+          for (const name of allToolNames) {
+            console.log(`  ${name}`);
+          }
+          console.log('');
+          break;
+        }
+
         case 'switch-model': {
           const allModels = listModels();
           if (!allModels.includes(cmd.model)) {

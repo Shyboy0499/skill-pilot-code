@@ -10,6 +10,7 @@ export type ReplCommand =
   | { type: 'fork'; id: string }
   | { type: 'help' }
   | { type: 'models' }
+  | { type: 'tools' }
   | { type: 'switch-model'; model: string };
 
 export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void {
@@ -28,6 +29,7 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
   console.log('  /fork <id>     Fork a saved session');
   console.log('  /list          List saved sessions');
   console.log('  /models        List available models');
+  console.log('  /tools         List available tools');
   console.log('  /model <name>  Switch to a different model');
   console.log('');
 
@@ -54,6 +56,8 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
       cmd = { type: 'help' };
     } else if (trimmed === '/models') {
       cmd = { type: 'models' };
+    } else if (trimmed === '/tools') {
+      cmd = { type: 'tools' };
     } else if (trimmed.startsWith('/load ')) {
       cmd = { type: 'load', id: trimmed.slice(6).trim() };
     } else if (trimmed.startsWith('/fork ')) {
