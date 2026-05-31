@@ -1,3 +1,5 @@
+import { patchToolParameters } from './patches/sdk-patch';
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -356,20 +358,28 @@ const bashTool = {
   type: 'function' as const,
   name: 'bash',
   description: 'Execute a bash command on the system. Use this to read files, run tests, or modify code.',
+  needsApproval: async () => requireApproval,
   parameters: z.object({
     command: z.string().describe('The shell command to execute.'),
   }),
-  run: async (args: { command: string }) => executeBash(args.command),
+  invoke: async (_runContext: any, input: any) => {
+    let args: any = input;
+    if (typeof input === 'string') { try { args = JSON.parse(input); } catch {} }
+    return executeBash(args.command);
+  },
 };
 
 const bashStreamTool = {
   type: 'function' as const,
   name: 'bash_stream',
   description: 'Execute a bash command with real-time streaming output. Use this for long-running commands where you want to see progress.',
+  needsApproval: async () => requireApproval,
   parameters: z.object({
     command: z.string().describe('The shell command to execute.'),
   }),
-  run: async (args: { command: string }) => {
+  invoke: async (_runContext: any, input: any) => {
+    let args: any = input;
+    if (typeof input === 'string') { try { args = JSON.parse(input); } catch {} }
     const approved = await promptApproval(args.command);
     if (!approved) return 'Command denied by user.';
 
@@ -474,11 +484,18 @@ When working on a task:
 `;
 
   const fileTools = createTools(options.agentDir);
+  const isRealOpenAI = resolved.provider.id === 'openai';
+
+  // apply_patch is a hosted tool — only works with OpenAI's Responses API.
+  const hostedTools = isRealOpenAI ? [patchTool as any] : [];
+
+  const allBuiltTools = [...hostedTools, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools];
+  patchToolParameters(allBuiltTools);
 
   return await buildOpenAIAgent(
     resolved,
     instructions + multiTurnPrompt + skillInstructions,
-    [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools],
+    allBuiltTools,
     effort,
   );
 }
@@ -506,7 +523,8 @@ async function runAgentStream(
 
   // Non-OpenAI adapters
   const fileTools = createTools(options.agentDir);
-  const allTools = [patchTool as any, bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools];
+  const allTools = [bashTool as any, bashStreamTool as any, ...fileTools.map((t) => t as any), ...mcpTools];
+  patchToolParameters(allTools);
   const collectedItems: AgentInputItem[] = [...conversation];
 
   const adapterStream =

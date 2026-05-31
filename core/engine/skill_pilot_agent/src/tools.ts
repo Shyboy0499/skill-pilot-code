@@ -20,6 +20,7 @@ export const readTool = {
   type: 'function' as const,
   name: 'read',
   description: 'Read the contents of a file.',
+  needsApproval: async () => false,
   parameters: z.object({
     file_path: z.string().describe('Path to the file to read, relative to the project root.'),
   }),
@@ -35,6 +36,7 @@ export const writeTool = {
   type: 'function' as const,
   name: 'write',
   description: 'Create a new file or overwrite an existing one.',
+  needsApproval: async () => false,
   parameters: z.object({
     file_path: z.string().describe('Path to the file to write, relative to the project root.'),
     content: z.string().describe('The content to write to the file.'),
@@ -53,6 +55,7 @@ export const editTool = {
   type: 'function' as const,
   name: 'edit',
   description: 'Replace a string in a file. The old_string must match exactly once.',
+  needsApproval: async () => false,
   parameters: z.object({
     file_path: z.string().describe('Path to the file to edit, relative to the project root.'),
     old_string: z.string().describe('The exact string to replace.'),
@@ -75,6 +78,7 @@ export const globTool = {
   type: 'function' as const,
   name: 'glob',
   description: 'Find files matching a pattern. Supports ** for recursive matching.',
+  needsApproval: async () => false,
   parameters: z.object({
     pattern: z.string().describe('Glob pattern, e.g. "src/**/*.ts" or "*.md".'),
   }),
@@ -82,7 +86,6 @@ export const globTool = {
     const results: string[] = [];
 
     function patternToRegex(pat: string): RegExp {
-      // Escape regex special chars except * and ?
       let escaped = '';
       for (const ch of pat) {
         if (ch === '*') escaped += '.*';
@@ -98,7 +101,6 @@ export const globTool = {
       const [head, ...tail] = segments;
       if (head === '**') {
         if (tail.length === 0) return true;
-        // Try matching 0..N segments against tail
         const parts = entryPath.split('/');
         for (let i = 0; i <= parts.length; i++) {
           if (matchPath(parts.slice(i).join('/'), tail)) return true;
@@ -140,6 +142,7 @@ export const grepTool = {
   type: 'function' as const,
   name: 'grep',
   description: 'Search file contents for a regex pattern. Returns matching lines with line numbers.',
+  needsApproval: async () => false,
   parameters: z.object({
     pattern: z.string().describe('The regex pattern to search for.'),
     path: z.string().optional().describe('File or directory to search. Defaults to the project root.'),
@@ -189,24 +192,43 @@ export const grepTool = {
   },
 };
 
+// Wrap a raw tool object into the SDK-compatible format (v0.11+ requires invoke/needsApproval).
+// SDK invoke signature: (runContext, input, details?) => result
+// SDK passes input as a JSON string from Chat Completions APIs — parse it.
+function adaptTool(raw: any): any {
+  const origRun = raw.invoke || raw.run || (async () => { throw new Error(`Tool ${raw.name} has no invoke/run`); });
+  return {
+    type: raw.type || 'function',
+    name: raw.name,
+    description: raw.description,
+    parameters: raw.parameters,
+    needsApproval: raw.needsApproval || (async () => false),
+    invoke: async (_runContext: any, input: any, _details?: any) => {
+      // Parse JSON string args from Chat Completions
+      let args = input;
+      if (typeof input === 'string') {
+        try { args = JSON.parse(input); } catch { /* pass raw */ }
+      }
+      return origRun(args, _runContext?.context);
+    },
+  };
+}
+
 // All tools with context injection
 export function createTools(agentDir: string): any[] {
   const ctx: ToolContext = { agentDir };
   const sandboxedBashTool = createSandboxedBash({ agentDir });
 
   return [
-    { ...readTool, run: (args: any) => readTool.run(args, ctx) },
-    { ...writeTool, run: (args: any) => writeTool.run(args, ctx) },
-    { ...editTool, run: (args: any) => editTool.run(args, ctx) },
-    { ...globTool, run: (args: any) => globTool.run(args, ctx) },
-    { ...grepTool, run: (args: any) => grepTool.run(args, ctx) },
-    // Web tools (no context needed — self-contained URL operations)
-    webFetchTool,
-    webSearchTool,
-    // Sandboxed bash (agentDir baked in via factory)
-    sandboxedBashTool,
-    // File watcher tools (need agentDir for path resolution)
-    { ...watchTool, run: (args: any) => watchTool.run(args, ctx) },
-    { ...watchFileTool, run: (args: any) => watchFileTool.run(args, ctx) },
+    adaptTool({ ...readTool, invoke: (args: any) => readTool.run(args, ctx) }),
+    adaptTool({ ...writeTool, invoke: (args: any) => writeTool.run(args, ctx) }),
+    adaptTool({ ...editTool, invoke: (args: any) => editTool.run(args, ctx) }),
+    adaptTool({ ...globTool, invoke: (args: any) => globTool.run(args, ctx) }),
+    adaptTool({ ...grepTool, invoke: (args: any) => grepTool.run(args, ctx) }),
+    adaptTool({ ...webFetchTool, invoke: webFetchTool.run }),
+    adaptTool({ ...webSearchTool, invoke: webSearchTool.run }),
+    adaptTool({ ...sandboxedBashTool, invoke: sandboxedBashTool.run }),
+    adaptTool({ ...watchTool, invoke: (args: any) => watchTool.run(args, ctx) }),
+    adaptTool({ ...watchFileTool, invoke: (args: any) => watchFileTool.run(args, ctx) }),
   ];
 }
