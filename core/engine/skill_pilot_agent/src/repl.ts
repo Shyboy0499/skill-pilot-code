@@ -11,7 +11,10 @@ export type ReplCommand =
   | { type: 'help' }
   | { type: 'models' }
   | { type: 'tools' }
-  | { type: 'switch-model'; model: string };
+  | { type: 'switch-model'; model: string }
+  | { type: 'watch-on'; paths?: string[] }
+  | { type: 'watch-off' }
+  | { type: 'watch-status' };
 
 export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void {
   const rl = createInterface({
@@ -31,6 +34,7 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
   console.log('  /models        List available models');
   console.log('  /tools         List available tools');
   console.log('  /model <name>  Switch to a different model');
+  console.log('  /watch [on|off] Start/stop live coding watch mode');
   console.log('');
 
   rl.prompt();
@@ -64,6 +68,15 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
       cmd = { type: 'fork', id: trimmed.slice(6).trim() };
     } else if (trimmed.startsWith('/model ')) {
       cmd = { type: 'switch-model', model: trimmed.slice(7).trim() };
+    } else if (trimmed === '/watch on' || trimmed === '/watch') {
+      cmd = { type: 'watch-on' };
+    } else if (trimmed.startsWith('/watch on ')) {
+      const paths = trimmed.slice(10).trim().split(',').map(p => p.trim()).filter(Boolean);
+      cmd = { type: 'watch-on', paths };
+    } else if (trimmed === '/watch off') {
+      cmd = { type: 'watch-off' };
+    } else if (trimmed === '/watch status') {
+      cmd = { type: 'watch-status' };
     } else {
       cmd = { type: 'prompt', text: trimmed };
     }
