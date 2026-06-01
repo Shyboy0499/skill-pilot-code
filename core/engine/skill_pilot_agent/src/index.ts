@@ -20,6 +20,7 @@ import type { ResolvedProvider } from './providers/types';
 import { executeBashStreaming, consumeStreamingOutput } from './streaming/tool-stream';
 import { MCPClient, loadMCPTools } from './mcp/client';
 import type { MCPClientOptions } from './mcp/types';
+import { WatchLoop, type WatchConfig } from './watcher';
 
 dotenv.config();
 
@@ -38,6 +39,11 @@ program
   .option('--providers-config <path>', 'Path to providers.json config file')
   .option('--approve-tools <yes|no>', 'Require approval before running bash commands', 'no')
   .option('--mcp-server <json>', 'MCP server config: {"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem"]}')
+  .option('--watch', 'Enable live coding watch mode')
+  .option('--watch-paths <paths>', 'Comma-separated paths to watch', 'src/')
+  .option('--watch-debounce <ms>', 'Debounce window in ms', '2000')
+  .option('--watch-max-retries <number>', 'Max fix attempts per change batch', '3')
+  .option('--watch-auto-commit <yes|no>', 'Auto-commit after successful fix', 'yes')
   .argument('[prompt]', 'The user prompt');
 
 program.parse();
@@ -79,6 +85,19 @@ if (options.mcpServer) {
     process.exit(1);
   }
 }
+
+// Watch mode validation
+const watchDebounce = parseInt(options.watchDebounce);
+if (isNaN(watchDebounce) || watchDebounce < 100) {
+  console.error(`Invalid --watch-debounce value: ${options.watchDebounce}. Must be >= 100ms.`);
+  process.exit(1);
+}
+const watchMaxRetries = parseInt(options.watchMaxRetries);
+if (isNaN(watchMaxRetries) || watchMaxRetries < 1) {
+  console.error(`Invalid --watch-max-retries value: ${options.watchMaxRetries}. Must be >= 1.`);
+  process.exit(1);
+}
+const watchAutoCommit = options.watchAutoCommit !== 'no';
 
 // Tool approval gate
 const requireApproval = options.approveTools === 'yes';
@@ -591,6 +610,17 @@ async function consumeStream(
 
 // Main execution
 async function main() {
+  // Watch mode state (in main() closure so REPL handlers can access)
+  const watchConfig: WatchConfig = {
+    paths: options.watchPaths.split(',').map((p: string) => p.trim()).filter(Boolean),
+    debounceMs: watchDebounce,
+    maxRetries: watchMaxRetries,
+    autoCommit: watchAutoCommit,
+    model: model,
+    agentDir: options.agentDir,
+  };
+  let watchLoop: WatchLoop | null = null;
+
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
 
@@ -627,6 +657,12 @@ async function main() {
 
     let conversation: AgentInputItem[] = [];
     let sessionId: string | null = null;
+
+    // If --watch flag, auto-start watcher before REPL
+    if (options.watch) {
+      watchLoop = new WatchLoop(watchConfig);
+      watchLoop.start();
+    }
 
     startRepl(async (cmd: ReplCommand) => {
       switch (cmd.type) {
@@ -737,6 +773,39 @@ async function main() {
           resolved = newResolved;
           model = cmd.model;
           console.log(`\nSwitched to model: ${model} (provider: ${resolved.provider.id})\n`);
+          break;
+        }
+
+        case 'watch-on': {
+          if (cmd.paths && cmd.paths.length > 0) {
+            console.log(`\nStarting watch on: ${cmd.paths.join(', ')}`);
+            watchConfig.paths = cmd.paths;
+          }
+          if (watchLoop && watchLoop.isRunning()) {
+            watchLoop.stop();
+          }
+          watchLoop = new WatchLoop(watchConfig);
+          watchLoop.start();
+          break;
+        }
+
+        case 'watch-off': {
+          if (watchLoop && watchLoop.isRunning()) {
+            watchLoop.stop();
+            watchLoop = null;
+            console.log('Watch stopped.');
+          } else {
+            console.log('Watch is not running.');
+          }
+          break;
+        }
+
+        case 'watch-status': {
+          if (watchLoop && watchLoop.isRunning()) {
+            console.log(watchLoop.getStatus());
+          } else {
+            console.log('Watch is not running.');
+          }
           break;
         }
 
