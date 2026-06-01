@@ -14,10 +14,11 @@ export interface WatchConfig {
 export class WatchLoop {
   private config: WatchConfig;
   private watchers: fs.FSWatcher[] = [];
-  private pending: { changedFiles: Set<string>; retries: number } | null = null;
+  private pending: { changedFiles: Set<string> } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private fixQueue: string[][] = [];
   private running = false;
+  private busy = false;
   private stats = { filesWatched: 0, fixesApplied: 0, commitsMade: 0 };
 
   constructor(config: WatchConfig) {
@@ -73,7 +74,7 @@ export class WatchLoop {
     if (!this.running) return;
 
     if (!this.pending) {
-      this.pending = { changedFiles: new Set(), retries: 0 };
+      this.pending = { changedFiles: new Set() };
     }
 
     this.pending.changedFiles.add(path.relative(this.config.agentDir, filePath));
@@ -91,7 +92,7 @@ export class WatchLoop {
     console.error(`\n[change] ${files.join(', ')}`);
 
     // If currently running a fix, queue this batch
-    if (this.fixQueue.length > 0) {
+    if (this.busy) {
       this.fixQueue.push(files);
       this.pending = null;
       return;
@@ -101,6 +102,7 @@ export class WatchLoop {
   }
 
   private async runFixCycle(files: string[]): Promise<void> {
+    this.busy = true;
     const prompt = this.buildFixPrompt(files);
     let success = false;
 
@@ -126,6 +128,7 @@ export class WatchLoop {
     if (!success) {
       console.error(`  Giving up after ${this.config.maxRetries} attempts.`);
       this.pending = null;
+      this.busy = false;
       this.processQueue();
       return;
     }
@@ -142,6 +145,7 @@ export class WatchLoop {
 
     this.pending = null;
     console.error(`  Waiting for changes...\n`);
+    this.busy = false;
     this.processQueue();
   }
 
@@ -176,23 +180,32 @@ After fixing: verify with tsc and tests, then report: "FIXED: <summary>" if succ
 
       let output = '';
 
+      const timeoutId = setTimeout(() => {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 5000);
+      }, 130_000);
+
       child.stdout.on('data', (data: Buffer) => {
         const text = data.toString();
         process.stdout.write(text);
-        output += text;
+        if (output.length < 100_000) output += text.substring(0, 100_000 - output.length);
       });
 
       child.stderr.on('data', (data: Buffer) => {
         const text = data.toString();
         process.stderr.write(text);
-        output += text;
+        if (output.length < 100_000) output += text.substring(0, 100_000 - output.length);
       });
 
       child.on('close', (code) => {
+        clearTimeout(timeoutId);
         resolve({ exitCode: code, output });
       });
 
       child.on('error', (err) => {
+        clearTimeout(timeoutId);
         reject(err);
       });
     });
@@ -200,7 +213,12 @@ After fixing: verify with tsc and tests, then report: "FIXED: <summary>" if succ
 
   private gitCommit(files: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const gitAdd = spawn('git', ['add', ...files], {
+      if (files.length === 0) {
+        resolve();
+        return;
+      }
+
+      const gitAdd = spawn('git', ['add', '--all', '--', ...files], {
         cwd: this.config.agentDir,
         stdio: 'pipe',
       });
