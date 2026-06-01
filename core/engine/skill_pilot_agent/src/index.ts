@@ -620,6 +620,15 @@ async function main() {
     agentDir: options.agentDir,
   };
   let watchLoop: WatchLoop | null = null;
+  const defaultWatchPaths = [...watchConfig.paths]; // snapshot original CLI defaults
+
+  // Graceful shutdown for watch mode
+  process.on('SIGINT', () => {
+    if (watchLoop && watchLoop.isRunning()) {
+      watchLoop.stop();
+    }
+    process.exit(0);
+  });
 
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
@@ -715,7 +724,7 @@ async function main() {
           break;
 
         case 'help':
-          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name> | /tools');
+          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name> | /tools | /watch');
           break;
 
         case 'models': {
@@ -780,10 +789,13 @@ async function main() {
           if (cmd.paths && cmd.paths.length > 0) {
             console.log(`\nStarting watch on: ${cmd.paths.join(', ')}`);
             watchConfig.paths = cmd.paths;
+          } else {
+            watchConfig.paths = [...defaultWatchPaths]; // reset to CLI defaults
           }
           if (watchLoop && watchLoop.isRunning()) {
             watchLoop.stop();
           }
+          watchConfig.model = model;
           watchLoop = new WatchLoop(watchConfig);
           watchLoop.start();
           break;
