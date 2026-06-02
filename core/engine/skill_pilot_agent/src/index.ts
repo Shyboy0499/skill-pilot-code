@@ -611,14 +611,13 @@ async function consumeStream(
 // Main execution
 async function main() {
   // Watch mode state (in main() closure so REPL handlers can access)
-  const watchConfig: WatchConfig = {
+  let watchConfig = WatchLoop.loadConfig(options.agentDir, {
     paths: options.watchPaths.split(',').map((p: string) => p.trim()).filter(Boolean),
     debounceMs: watchDebounce,
     maxRetries: watchMaxRetries,
     autoCommit: watchAutoCommit,
     model: model,
-    agentDir: options.agentDir,
-  };
+  });
   let watchLoop: WatchLoop | null = null;
   const defaultWatchPaths = [...watchConfig.paths]; // snapshot original CLI defaults
 
@@ -633,9 +632,19 @@ async function main() {
   const instructions = loadInstructions(options.agentDir);
   const skillInstructions = loadSkills(options.agentDir, options.skillsDir, options.skills);
 
-  // No prompt + TTY → REPL mode. No prompt + pipe → show help.
+  // No prompt + TTY → REPL mode. No prompt + no --watch → show help.
   if (!userPrompt) {
     if (!process.stdin.isTTY) {
+      // --watch in headless mode (no TTY, background daemon)
+      if (options.watch) {
+        console.error('Skill Pilot spcode watching with model: ' + model + ' (provider: ' + resolved.provider.id + ')');
+        watchLoop = new WatchLoop(watchConfig);
+        watchLoop.start();
+        process.on('SIGINT', function() { if (watchLoop) watchLoop.stop(); process.exit(0); });
+        process.on('SIGTERM', function() { if (watchLoop) watchLoop.stop(); process.exit(0); });
+        setInterval(function() {}, 60000); // keep event loop alive
+        return;
+      }
       program.help();
       process.exit(0);
     }

@@ -20,9 +20,34 @@ export class WatchLoop {
   private running = false;
   private busy = false;
   private stats = { filesWatched: 0, fixesApplied: 0, commitsMade: 0 };
+  private statsFile: string;
+
+  static loadConfig(agentDir: string, cliOverrides: Partial<WatchConfig> = {}): WatchConfig {
+    const defaults: WatchConfig = {
+      paths: ['src/'],
+      debounceMs: 2000,
+      maxRetries: 3,
+      autoCommit: true,
+      model: '',
+      agentDir: agentDir,
+    };
+    const rcPath = path.join(agentDir, '.watchrc.json');
+    if (fs.existsSync(rcPath)) {
+      try {
+        const rc = JSON.parse(fs.readFileSync(rcPath, 'utf8'));
+        if (rc.paths && Array.isArray(rc.paths)) defaults.paths = rc.paths;
+        if (typeof rc.debounceMs === 'number') defaults.debounceMs = rc.debounceMs;
+        if (typeof rc.maxRetries === 'number') defaults.maxRetries = rc.maxRetries;
+        if (typeof rc.autoCommit === 'boolean') defaults.autoCommit = rc.autoCommit;
+      } catch (e) { /* ignore */ }
+    }
+    return Object.assign({}, defaults, cliOverrides);
+  }
 
   constructor(config: WatchConfig) {
     this.config = config;
+    this.statsFile = path.join(config.agentDir, '.skillpilot', 'watch-stats.json');
+    this.loadStats();
   }
 
   async start(): Promise<void> {
@@ -101,7 +126,7 @@ export class WatchLoop {
     await this.runFixCycle(files);
   }
 
-  private async runFixCycle(files: string[]): Promise<void> {
+  async runFixCycle(files: string[]): Promise<void> {
     this.busy = true;
     const prompt = this.buildFixPrompt(files);
     let success = false;
@@ -116,6 +141,7 @@ export class WatchLoop {
         success = result.exitCode === 0;
         if (success) {
           this.stats.fixesApplied++;
+          this.saveStats();
           console.error(`  Fix cycle succeeded.`);
         } else {
           console.error(`  Agent exited with code ${result.exitCode}`);
@@ -138,6 +164,7 @@ export class WatchLoop {
       try {
         await this.gitCommit(files);
         this.stats.commitsMade++;
+        this.saveStats();
       } catch (err: any) {
         console.error(`  Commit failed: ${err.message}`);
       }
@@ -262,6 +289,28 @@ After fixing: verify with tsc and tests, then report: "FIXED: <summary>" if succ
       const next = this.fixQueue.shift()!;
       this.runFixCycle(next);
     }
+  }
+
+  private loadStats() {
+    try {
+      if (fs.existsSync(this.statsFile)) {
+        const saved = JSON.parse(fs.readFileSync(this.statsFile, 'utf8'));
+        if (typeof saved.fixesApplied === 'number') this.stats.fixesApplied = saved.fixesApplied;
+        if (typeof saved.commitsMade === 'number') this.stats.commitsMade = saved.commitsMade;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  private saveStats() {
+    try {
+      const dir = path.dirname(this.statsFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.statsFile, JSON.stringify({
+        fixesApplied: this.stats.fixesApplied,
+        commitsMade: this.stats.commitsMade,
+        lastRun: 'see file mtime',
+      }, null, 2));
+    } catch (e) { /* ignore */ }
   }
 
   getStatus(): string {
