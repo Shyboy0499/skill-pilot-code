@@ -733,7 +733,7 @@ async function main() {
           break;
 
         case 'help':
-          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name> | /tools | /watch');
+          console.log('/exit | /clear | /save | /load <id> | /fork <id> | /list | /models | /model <name> | /tools | /fix | /watch');
           break;
 
         case 'models': {
@@ -827,6 +827,20 @@ async function main() {
           } else {
             console.log('Watch is not running.');
           }
+          break;
+        }
+
+        case 'fix': {
+          var fixPaths = cmd.paths && cmd.paths.length > 0 ? cmd.paths : watchConfig.paths;
+          console.log('\nRunning fix cycle on: ' + fixPaths.join(', ') + '...');
+          var fixCfg = { paths: fixPaths, debounceMs: watchConfig.debounceMs, maxRetries: watchConfig.maxRetries, autoCommit: false, model: model, agentDir: watchConfig.agentDir };
+          var fixLoop = new WatchLoop(fixCfg);
+          try {
+            await fixLoop.runFixCycle(fixPaths);
+          } catch (err: any) {
+            console.error('Fix cycle error: ' + (err.message || err));
+          }
+          console.log('Fix cycle complete.\n');
           break;
         }
 

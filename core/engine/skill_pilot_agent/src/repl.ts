@@ -14,7 +14,8 @@ export type ReplCommand =
   | { type: 'switch-model'; model: string }
   | { type: 'watch-on'; paths: string[] }
   | { type: 'watch-off' }
-  | { type: 'watch-status' };
+  | { type: 'watch-status' }
+  | { type: 'fix'; paths: string[] };
 
 export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void {
   const rl = createInterface({
@@ -35,6 +36,7 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
   console.log('  /tools         List available tools');
   console.log('  /model <name>  Switch to a different model');
   console.log('  /watch <on|off|status>  Manage live coding watch mode');
+  console.log('  /fix [paths]    Run a one-shot fix cycle on specified paths');
   console.log('');
 
   rl.prompt();
@@ -76,6 +78,11 @@ export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void 
       cmd = { type: 'watch-off' };
     } else if (trimmed === '/watch status') {
       cmd = { type: 'watch-status' };
+    } else if (trimmed === '/fix') {
+      cmd = { type: 'fix', paths: [] };
+    } else if (trimmed.startsWith('/fix ')) {
+      var fixPaths = trimmed.slice(5).trim().split(',').map(function(p) { return p.trim(); }).filter(Boolean);
+      cmd = { type: 'fix', paths: fixPaths };
     } else {
       cmd = { type: 'prompt', text: trimmed };
     }
