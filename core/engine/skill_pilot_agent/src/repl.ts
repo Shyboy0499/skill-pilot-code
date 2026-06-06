@@ -18,10 +18,13 @@ export type ReplCommand =
   | { type: 'fix'; paths: string[] };
 
 export function startRepl(onCommand: (cmd: ReplCommand) => Promise<void>): void {
+  const history: string[] = [];
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: '\n> ',
+    history,
+    historySize: 500,
   });
 
   console.log('Skill Pilot Agent — multi-turn mode');

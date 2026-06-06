@@ -48,6 +48,33 @@ export function loadProviderConfig(configPath?: string): void {
   _defaultProviderId = data.default || data.providers[0].id;
 }
 
+function closestMatch(input: string, candidates: string[]): string | null {
+  let best = null;
+  let bestDist = Infinity;
+  const lower = input.toLowerCase();
+  for (const c of candidates) {
+    const dist = levenshtein(lower, c.toLowerCase());
+    if (dist < bestDist && dist <= 3) {
+      bestDist = dist;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
 export function resolveModel(model: string): ResolvedProvider {
   if (!_registry) {
     console.error('Error: Provider config not loaded. Call loadProviderConfig() first.');
@@ -56,8 +83,10 @@ export function resolveModel(model: string): ResolvedProvider {
 
   const provider = _registry.get(model);
   if (!provider) {
-    const allModels = Array.from(_registry.keys()).join(', ');
-    console.error(`Error: Unknown model '${model}'. Available models: ${allModels}`);
+    const allModels = Array.from(_registry.keys());
+    const suggestion = closestMatch(model, allModels);
+    const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
+    console.error(`Error: Unknown model '${model}'.${hint} Available models: ${allModels.join(', ')}`);
     process.exit(1);
   }
 

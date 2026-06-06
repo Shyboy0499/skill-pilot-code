@@ -46,6 +46,31 @@ program
   .option('--watch-auto-commit <yes|no>', 'Auto-commit after successful fix', 'yes')
   .argument('[prompt]', 'The user prompt');
 
+program.addHelpText('after', `
+Examples:
+  # One-shot mode with DeepSeek
+  SPCODE_MODEL=deepseek-v4-flash DEEPSEEK_API_KEY="sk-..." skill-pilot-agent "fix all type errors"
+
+  # REPL mode (multi-turn conversation)
+  DEEPSEEK_API_KEY="sk-..." skill-pilot-agent --model deepseek-v4-flash
+
+  # Live coding watch mode (auto-fix on file changes)
+  DEEPSEEK_API_KEY="sk-..." skill-pilot-agent --watch --model deepseek-v4-flash
+
+  # Use a specific provider
+  skill-pilot-agent --model gpt-5.5 --effort high "review this code"
+
+  # Load skills and use custom config
+  skill-pilot-agent --model deepseek-v4-flash --skills-dir .agent --skills all
+
+Environment:
+  DEEPSEEK_API_KEY   DeepSeek API key
+  OPENAI_API_KEY     OpenAI API key
+  ANTHROPIC_API_KEY  Anthropic API key
+  GEMINI_API_KEY     Gemini API key
+  SPCODE_MODEL       Default model (overridden by --model)
+`);
+
 program.parse();
 
 const options = program.opts();
@@ -129,7 +154,7 @@ const providersJsonPath = options.providersConfig
   : path.resolve(__dirname, '../providers.json');
 loadProviderConfig(providersJsonPath);
 
-let model = options.model;
+let model = options.model || process.env.SPCODE_MODEL;
 if (!model) {
   const available = listModels().join(', ');
   console.error(`Error: --model <model> is required. Available: ${available}`);
