@@ -11,6 +11,9 @@
 set -e
 cd "$(dirname "$0")/core/engine/skill_pilot_agent"
 
+# ---- Suppress tracing noise for non-OpenAI keys ----
+export OPENAI_AGENTS_DISABLE_TRACING=true
+
 # ---- API Keys (set before running) ----
 export DEEPSEEK_API_KEY
 export OPENAI_API_KEY
