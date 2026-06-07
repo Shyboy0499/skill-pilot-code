@@ -22,7 +22,7 @@ import { MCPClient, loadMCPTools } from './mcp/client';
 import type { MCPClientOptions } from './mcp/types';
 import { WatchLoop, type WatchConfig } from './watcher';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const program = new Command();
 
