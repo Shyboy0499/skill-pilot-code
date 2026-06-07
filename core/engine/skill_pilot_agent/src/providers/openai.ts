@@ -41,6 +41,10 @@ export async function buildOpenAIAgent(
 ): Promise<Agent> {
   process.env.OPENAI_BASE_URL = resolved.provider.base_url;
   process.env.OPENAI_API_KEY = process.env[resolved.provider.api_key_env] || '';
+  // Disable tracing for non-OpenAI providers — their keys fail against api.openai.com
+  if (resolved.provider.id !== 'openai') {
+    process.env.OPENAI_TRACING_DISABLED = 'true';
+  }
 
   const modelSettings: any = {};
   if (effort && resolved.provider.effort_levels.includes(effort)) {
